@@ -16,6 +16,10 @@ aiosignal==1.3.2
     # via aiohttp
 annotated-types==0.7.0
     # via pydantic
+appnope==0.1.4
+    # via ipykernel
+asttokens==3.0.0
+    # via stack-data
 async-timeout==5.0.1
     # via aiohttp
 attrs==25.3.0
@@ -30,12 +34,24 @@ charset-normalizer==3.4.2
     # via requests
 click==8.1.8
     # via pip-tools
+comm==0.2.2
+    # via
+    #   ipykernel
+    #   ipywidgets
 contourpy==1.3.2
     # via matplotlib
 cycler==0.12.1
     # via matplotlib
+debugpy==1.8.14
+    # via ipykernel
+decorator==5.2.1
+    # via ipython
 distlib==0.3.9
     # via virtualenv
+exceptiongroup==1.2.2
+    # via ipython
+executing==2.2.0
+    # via stack-data
 filelock==3.18.0
     # via
     #   huggingface-hub
@@ -68,10 +84,28 @@ idna==3.10
     # via
     #   requests
     #   yarl
+ipykernel==6.29.5
+    # via -r requirements.in
+ipython==8.36.0
+    # via
+    #   ipykernel
+    #   ipywidgets
+ipywidgets==8.1.7
+    # via -r requirements.in
+jedi==0.19.2
+    # via ipython
 jinja2==3.1.6
     # via
     #   torch
     #   torch-geometric
+jupyter-client==8.6.3
+    # via ipykernel
+jupyter-core==5.7.2
+    # via
+    #   ipykernel
+    #   jupyter-client
+jupyterlab-widgets==3.0.15
+    # via ipywidgets
 kiwisolver==1.4.8
     # via matplotlib
 lightning==2.4.0
@@ -84,13 +118,21 @@ lightning-utilities==0.14.3
 markupsafe==3.0.2
     # via jinja2
 matplotlib==3.10.1
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   seaborn
+matplotlib-inline==0.1.7
+    # via
+    #   ipykernel
+    #   ipython
 mpmath==1.3.0
     # via sympy
 multidict==6.4.3
     # via
     #   aiohttp
     #   yarl
+nest-asyncio==1.6.0
+    # via ipykernel
 networkx==3.4.2
     # via torch
 nodeenv==1.9.1
@@ -100,6 +142,7 @@ numpy==2.2.5
     #   contourpy
     #   matplotlib
     #   pandas
+    #   seaborn
     #   torch-geometric
     #   torchmetrics
     #   torchvision
@@ -109,13 +152,20 @@ packaging==24.2
     # via
     #   build
     #   huggingface-hub
+    #   ipykernel
     #   lightning
     #   lightning-utilities
     #   matplotlib
     #   pytorch-lightning
     #   torchmetrics
 pandas==2.2.3
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   seaborn
+parso==0.8.4
+    # via jedi
+pexpect==4.9.0
+    # via ipython
 pillow==11.2.1
     # via
     #   matplotlib
@@ -123,19 +173,31 @@ pillow==11.2.1
 pip-tools==7.4.1
     # via -r requirements.in
 platformdirs==4.3.7
-    # via virtualenv
+    # via
+    #   jupyter-core
+    #   virtualenv
 pre-commit==4.2.0
     # via -r requirements.in
+prompt-toolkit==3.0.51
+    # via ipython
 propcache==0.3.1
     # via
     #   aiohttp
     #   yarl
 psutil==7.0.0
-    # via torch-geometric
+    # via
+    #   ipykernel
+    #   torch-geometric
+ptyprocess==0.7.0
+    # via pexpect
+pure-eval==0.2.3
+    # via stack-data
 pydantic==2.11.4
     # via -r requirements.in
 pydantic-core==2.33.2
     # via pydantic
+pygments==2.19.1
+    # via ipython
 pyparsing==3.2.3
     # via
     #   matplotlib
@@ -146,6 +208,7 @@ pyproject-hooks==1.2.0
     #   pip-tools
 python-dateutil==2.9.0.post0
     # via
+    #   jupyter-client
     #   matplotlib
     #   pandas
 pytorch-lightning==2.5.1.post0
@@ -159,6 +222,10 @@ pyyaml==6.0.2
     #   pre-commit
     #   pytorch-lightning
     #   timm
+pyzmq==26.4.0
+    # via
+    #   ipykernel
+    #   jupyter-client
 regex==2024.11.6
     # via open-clip-torch
 requests==2.32.3
@@ -169,8 +236,12 @@ safetensors==0.5.3
     # via
     #   open-clip-torch
     #   timm
+seaborn==0.13.2
+    # via -r requirements.in
 six==1.17.0
     # via python-dateutil
+stack-data==0.6.3
+    # via ipython
 sympy==1.14.0
     # via torch
 timm==1.0.15
@@ -199,6 +270,10 @@ torchvision==0.19.0
     #   -r requirements.in
     #   open-clip-torch
     #   timm
+tornado==6.4.2
+    # via
+    #   ipykernel
+    #   jupyter-client
 tqdm==4.67.1
     # via
     #   huggingface-hub
@@ -206,9 +281,19 @@ tqdm==4.67.1
     #   open-clip-torch
     #   pytorch-lightning
     #   torch-geometric
+traitlets==5.14.3
+    # via
+    #   comm
+    #   ipykernel
+    #   ipython
+    #   ipywidgets
+    #   jupyter-client
+    #   jupyter-core
+    #   matplotlib-inline
 typing-extensions==4.13.2
     # via
     #   huggingface-hub
+    #   ipython
     #   lightning
     #   lightning-utilities
     #   multidict
@@ -226,9 +311,13 @@ urllib3==2.4.0
 virtualenv==20.31.1
     # via pre-commit
 wcwidth==0.2.13
-    # via ftfy
+    # via
+    #   ftfy
+    #   prompt-toolkit
 wheel==0.45.1
     # via pip-tools
+widgetsnbextension==4.0.14
+    # via ipywidgets
 yarl==1.20.0
     # via aiohttp
 

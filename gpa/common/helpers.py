@@ -1,3 +1,5 @@
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 
@@ -89,3 +91,77 @@ def build_graph_from_detections(
     id_to_idx = {bbox_id: idx for idx, bbox_id in enumerate(prod_bbox_ids + price_bbox_ids)}
 
     return UndirectedGraph(id_to_idx=id_to_idx, x=x, edge_index=edge_index, edge_attr=edge_attr)
+
+
+def plot_bboxes(
+    bboxes: torch.Tensor,
+    ax: plt.Axes,
+    linestyle: str = "solid",
+    color: str | tuple[float, float, float] | None = None,
+    width: float = 1.0,
+    height: float = 1.0,
+):
+    """Plot the given array of bounding boxes on the provided axes.
+
+    Args:
+        bboxes (torch.Tensor): A (n, 4) tensor of bounding boxes in xywhn format.
+        ax (plt.Axes): The axes to plot the boxes on.
+        linestyle (str, optional): Linestyle for the bounding box (passed to matplotlib). Defaults to "solid".
+        color (str | tuple[float, float, float] | None, optional): Edge color for the bounding box. Defaults to None.
+        width (float): The desired width of the plot (bboxes will be rescaled from relative to abs. coordinates).
+        height (float): The desired height of the plot (bboxes will be rescaled from relative to abs. coordinates).
+    """
+    ax.set_xlim(0, width)
+    ax.set_ylim(height, 0)
+    ax.set_aspect("equal")
+
+    for bbox in bboxes:
+        x, y, w, h = bbox.flatten().tolist()
+        x = x * width
+        y = y * height
+        w = w * width
+        h = h * height
+        rect = patches.Rectangle(
+            (x - w / 2, y - h / 2),
+            w,
+            h,
+            linewidth=1.5,
+            edgecolor=color or "k",
+            facecolor="none",
+            linestyle=linestyle,
+        )
+        ax.add_patch(rect)
+
+
+def parse_into_subgraphs(edge_index: torch.Tensor, num_nodes: int) -> torch.Tensor:
+    """Parse the graph specified by `edge_index` into its disjoint subgraphs.
+
+    Args:
+        edge_index: The edge indices of the graph.
+        num_nodes: The number of nodes in the graph.
+
+    Returns:
+        A tensor of node indices, where each index is the root of the subgraph it belongs to.
+    """
+    parent = torch.arange(num_nodes, device=edge_index.device)
+
+    def find(u):
+        while parent[u] != u:
+            parent[u] = parent[parent[u]]
+            u = parent[u]
+        return u
+
+    def union(u, v):
+        u_root = find(u)
+        v_root = find(v)
+        if u_root != v_root:
+            parent[v_root] = u_root
+
+    src, dst = edge_index
+    for u, v in zip(src.tolist(), dst.tolist()):
+        union(u, v)
+
+    for i in range(num_nodes):
+        parent[i] = find(i)
+
+    return parent

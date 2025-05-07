@@ -125,7 +125,7 @@ class DetectionGraph(Data):
         is_prod_price_edge = (src_is_product & dst_is_price) | (src_is_price & dst_is_product)
 
         for j in range(self.edge_index.shape[1]):
-            weight = self.edge_attr[j]
+            weight = self.edge_attr[j].norm(p=2)
             src = self.edge_index[0, j]
             dst = self.edge_index[1, j]
             if prod_price_only and not is_prod_price_edge[j]:
