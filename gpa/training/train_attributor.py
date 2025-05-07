@@ -29,12 +29,17 @@ def train(config: TrainingConfig):
         mode="min",
         save_top_k=1,
     )
+    last_ckpt_callback = ModelCheckpoint(
+        dirpath=config.chkp_dir / config.run_name / version_dir,
+        filename="last",
+        save_last=True,
+    )
     trainer = L.Trainer(
         accelerator=config.accelerator.value,
         min_epochs=config.num_epochs,
         max_epochs=config.num_epochs,
         logger=logger,
-        callbacks=[best_ckpt_callback],
+        callbacks=[best_ckpt_callback, last_ckpt_callback],
         enable_model_summary=False,
     )
     model = LightningPriceAttributor(
