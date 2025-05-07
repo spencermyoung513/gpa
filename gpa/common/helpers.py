@@ -2,6 +2,7 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
+from torch_geometric.data import Batch
 
 from gpa.common.constants import IS_PRICE
 from gpa.common.constants import IS_PRODUCT
@@ -9,7 +10,22 @@ from gpa.common.objects import UndirectedGraph
 
 
 def min_max_normalize(x: torch.Tensor) -> torch.Tensor:
+    """Min-max normalize the given tensor."""
     return (x - x.min()) / (x.max() - x.min() + 1e-6)
+
+
+def edge_index_diff(edge_index_a: torch.Tensor, edge_index_b: torch.Tensor) -> torch.Tensor:
+    """Return the edge index containing only edges in `edge_index_a` that are not in `edge_index_b`."""
+    set_a = set(map(tuple, edge_index_a.T.tolist()))
+    set_b = set(map(tuple, edge_index_b.T.tolist()))
+    diff_pairs = set_a - set_b
+
+    if diff_pairs:
+        diff_tensor = torch.tensor(list(diff_pairs)).T
+    else:
+        diff_tensor = torch.empty((2, 0), dtype=edge_index_a.dtype)
+
+    return diff_tensor
 
 
 def build_graph_from_detections(
@@ -165,3 +181,106 @@ def parse_into_subgraphs(edge_index: torch.Tensor, num_nodes: int) -> torch.Tens
         parent[i] = find(i)
 
     return parent
+
+
+def connect_products_with_nearest_price_tag_below(
+    centroids: torch.Tensor,
+    product_indices: torch.LongTensor,
+    price_indices: torch.LongTensor,
+) -> torch.LongTensor:
+    """From the provided centroids, return an edge index connecting each product with the nearest price tag below it (if one exists).
+
+    Args:
+        centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
+        product_indices (torch.LongTensor): Indices of product nodes.
+        price_indices (torch.LongTensor): Indices of price tag nodes.
+
+    Returns:
+        torch.LongTensor: A (2, E) edge index connecting each product centroid with the nearest price tag below it (if one exists).
+    """
+    product_centroids = centroids[product_indices]
+    price_centroids = centroids[price_indices]
+
+    distances = torch.cdist(product_centroids, price_centroids, p=2)
+    product_y = product_centroids[:, 1].unsqueeze(1)
+    price_y = price_centroids[:, 1].unsqueeze(0)
+    # Recall: with bbox coordinates, the top of an image is y=0.
+    under_mask = price_y > product_y
+    distances[~under_mask] = float("inf")
+
+    idx_of_nearest = torch.argmin(distances, dim=1)
+    any_valid = torch.isfinite(distances).any(dim=1)
+
+    nearest_price_tensor = torch.full(
+        (len(product_indices),), -1, dtype=torch.long, device=product_centroids.device
+    )
+    nearest_price_tensor[any_valid] = price_indices[idx_of_nearest[any_valid]]
+
+    return torch.stack([product_indices[any_valid], nearest_price_tensor[any_valid]], dim=0)
+
+
+def get_candidate_edges(batch: Batch, balanced: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
+    """Given a batch of graphs (represented as a mega-graph with a block diagonal adjacency matrix), return a set of candidate edges (of which some are fake and some are present in the ground truth labels).
+
+    Args:
+        batch (Batch): A batch of data from a PriceAttributionDataset.
+        balanced (bool): Whether to balance the number of real and fake edges that are returned.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor]: Tensors specifying real/fake edges in the mega-graph.
+    """
+    real_edges = []
+    fake_edges = []
+    scene_indices = sorted(batch.batch.unique().tolist())
+
+    for scene_idx in scene_indices:
+
+        # Get the global indices that correspond to the current scene.
+        current_scene_indices = torch.where(batch.batch == scene_idx)[0]
+
+        # From the saved data, retrieve the ground-truth prod-price edges in the current scene (to teach the model what to look for).
+        src_in_scene = torch.isin(batch.gt_prod_price_edge_index[0], current_scene_indices)
+        dst_in_scene = torch.isin(batch.gt_prod_price_edge_index[1], current_scene_indices)
+        real_edges_in_scene: torch.Tensor = batch.gt_prod_price_edge_index[
+            :, src_in_scene & dst_in_scene
+        ]
+
+        # Generate fake prod-price edges for the current scene (to teach the model what *not* to look for.)
+        centroids = batch.x[current_scene_indices, :2]
+        candidate_edges = connect_products_with_nearest_price_tag_below(
+            centroids=centroids,
+            product_indices=torch.where(batch.x[current_scene_indices, -1] == 1)[0],
+            price_indices=torch.where(batch.x[current_scene_indices, -1] == 0)[0],
+        )
+        candidate_edges = torch.stack(
+            [current_scene_indices[candidate_edges[0]], current_scene_indices[candidate_edges[1]]],
+            dim=0,
+        )
+        candidate_edges = torch.cat([candidate_edges, candidate_edges.flip(0)], dim=1)
+        fake_edges_in_scene = edge_index_diff(candidate_edges, real_edges_in_scene)
+
+        if balanced:
+            n_positive = real_edges_in_scene.shape[1]
+            n_negative = fake_edges_in_scene.shape[1]
+            if n_positive == 0 or n_negative == 0:
+                continue
+            n_samples = min(n_positive, n_negative)
+            real_edges_in_scene = real_edges_in_scene[
+                :, torch.multinomial(torch.ones(n_positive), n_samples, replacement=False)
+            ]
+            fake_edges_in_scene = fake_edges_in_scene[
+                :, torch.multinomial(torch.ones(n_negative), n_samples, replacement=False)
+            ]
+
+        real_edges.append(real_edges_in_scene)
+        fake_edges.append(fake_edges_in_scene)
+
+    # Form a combined edge index for positive and negative edges across all scenes in the batch.
+    real_edges = (
+        torch.cat(real_edges, dim=-1) if real_edges else torch.empty((2, 0), dtype=torch.long)
+    )
+    fake_edges = (
+        torch.cat(fake_edges, dim=-1) if fake_edges else torch.empty((2, 0), dtype=torch.long)
+    )
+
+    return real_edges, fake_edges
