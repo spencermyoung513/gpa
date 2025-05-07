@@ -1,0 +1,2 @@
+IS_PRODUCT = 1.0
+IS_PRICE = 0.0
