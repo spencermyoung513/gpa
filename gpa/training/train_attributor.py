@@ -18,11 +18,12 @@ def train(config: TrainingConfig):
     )
     log_dir = Path(logger.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
+    version_dir = log_dir.stem
     with open(log_dir / "config.yaml", "w") as f:
         yaml.dump(config.model_dump(mode="json"), f)
 
     best_ckpt_callback = ModelCheckpoint(
-        dirpath=config.chkp_dir / config.run_name,
+        dirpath=config.chkp_dir / config.run_name / version_dir,
         filename="best_loss",
         monitor="val_loss",
         mode="min",
@@ -34,6 +35,7 @@ def train(config: TrainingConfig):
         max_epochs=config.num_epochs,
         logger=logger,
         callbacks=[best_ckpt_callback],
+        enable_model_summary=False,
     )
     model = LightningPriceAttributor(
         encoder_type=config.model.encoder_type,

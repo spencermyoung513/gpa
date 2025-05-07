@@ -183,12 +183,12 @@ def parse_into_subgraphs(edge_index: torch.Tensor, num_nodes: int) -> torch.Tens
     return parent
 
 
-def connect_products_with_nearest_price_tag_below(
+def connect_products_with_nearest_price_tag(
     centroids: torch.Tensor,
     product_indices: torch.LongTensor,
     price_indices: torch.LongTensor,
 ) -> torch.LongTensor:
-    """From the provided centroids, return an edge index connecting each product with the nearest price tag below it (if one exists).
+    """From the provided centroids, return an edge index connecting each product with the nearest price tag.
 
     Args:
         centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
@@ -196,27 +196,14 @@ def connect_products_with_nearest_price_tag_below(
         price_indices (torch.LongTensor): Indices of price tag nodes.
 
     Returns:
-        torch.LongTensor: A (2, E) edge index connecting each product centroid with the nearest price tag below it (if one exists).
+        torch.LongTensor: A (2, E) edge index connecting each product centroid with the nearest price tag.
     """
     product_centroids = centroids[product_indices]
     price_centroids = centroids[price_indices]
-
     distances = torch.cdist(product_centroids, price_centroids, p=2)
-    product_y = product_centroids[:, 1].unsqueeze(1)
-    price_y = price_centroids[:, 1].unsqueeze(0)
-    # Recall: with bbox coordinates, the top of an image is y=0.
-    under_mask = price_y > product_y
-    distances[~under_mask] = float("inf")
-
     idx_of_nearest = torch.argmin(distances, dim=1)
-    any_valid = torch.isfinite(distances).any(dim=1)
-
-    nearest_price_tensor = torch.full(
-        (len(product_indices),), -1, dtype=torch.long, device=product_centroids.device
-    )
-    nearest_price_tensor[any_valid] = price_indices[idx_of_nearest[any_valid]]
-
-    return torch.stack([product_indices[any_valid], nearest_price_tensor[any_valid]], dim=0)
+    nearest_price_tensor = price_indices[idx_of_nearest]
+    return torch.stack([product_indices, nearest_price_tensor], dim=0)
 
 
 def get_candidate_edges(batch: Batch, balanced: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
@@ -247,7 +234,7 @@ def get_candidate_edges(batch: Batch, balanced: bool = True) -> tuple[torch.Tens
 
         # Generate fake prod-price edges for the current scene (to teach the model what *not* to look for.)
         centroids = batch.x[current_scene_indices, :2]
-        candidate_edges = connect_products_with_nearest_price_tag_below(
+        candidate_edges = connect_products_with_nearest_price_tag(
             centroids=centroids,
             product_indices=torch.where(batch.x[current_scene_indices, -1] == 1)[0],
             price_indices=torch.where(batch.x[current_scene_indices, -1] == 0)[0],
