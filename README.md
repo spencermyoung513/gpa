@@ -25,3 +25,18 @@ When you commit new code, the pre-commit hook will run a series of scripts to st
 ## Viewing a Dataset
 
 To view a dataset, simply run the [Data Viewer](notebooks/data_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price graphs.
+
+
+## Training a Model
+
+To train a model, first fill out a config (using the [example config](ignore/config.yaml) as a template). Then, run the [training script](training/train_attributor.py):
+
+```bash
+python gpa/training/train_attributor.py --config path/to/your/config.yaml
+```
+
+The training script will save trained weights (both the best in terms of validation loss and the most recent copy) to the checkpoint directory specified in the config, and metrics will be saved to the log directory indicated in the config. Use the [Metrics Viewer](notebooks/metrics_viewer.ipynb) to view loss curves from a training run (and other metrics).
+
+## Evaluating a Model
+
+To get a qualitative sense of how well a model performs for price attribution, use the [Predictions Viewer](notebooks/predictions_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price attribution predictions (and comparing them to the ground truth).
