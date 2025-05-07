@@ -190,8 +190,8 @@ class LightningPriceAttributor(L.LightningModule):
         self.log(
             f"{step_type}_loss",
             loss,
-            on_step=True,
             on_epoch=True,
+            on_step=False,
             prog_bar=True,
             batch_size=batch.num_graphs,
         )
@@ -199,17 +199,26 @@ class LightningPriceAttributor(L.LightningModule):
             f"{step_type}_precision",
             precision,
             on_epoch=True,
-            prog_bar=True,
+            on_step=False,
+            prog_bar=step_type == "val",
             batch_size=batch.num_graphs,
         )
         self.log(
             f"{step_type}_recall",
             recall,
             on_epoch=True,
-            prog_bar=True,
+            on_step=False,
+            prog_bar=step_type == "val",
             batch_size=batch.num_graphs,
         )
-        self.log(f"{step_type}_f1", f1, on_epoch=True, batch_size=batch.num_graphs)
+        self.log(
+            f"{step_type}_f1",
+            f1,
+            on_epoch=True,
+            on_step=False,
+            prog_bar=step_type == "val",
+            batch_size=batch.num_graphs,
+        )
 
         return loss
 
