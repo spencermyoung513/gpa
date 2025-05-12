@@ -4,9 +4,9 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.data import Batch
 
-from gpa.common.constants import IS_PRICE
-from gpa.common.constants import IS_PRODUCT
-from gpa.common.objects import UndirectedGraph
+from src.common.constants import IS_PRICE
+from src.common.constants import IS_PRODUCT
+from src.common.objects import UndirectedGraph
 
 
 def min_max_normalize(x: torch.Tensor) -> torch.Tensor:

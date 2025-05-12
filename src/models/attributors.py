@@ -11,12 +11,12 @@ from torchmetrics.classification import BinaryF1Score
 from torchmetrics.classification import BinaryPrecision
 from torchmetrics.classification import BinaryRecall
 
-from gpa.common.enums import EncoderType
-from gpa.common.enums import LinkPredictorType
-from gpa.common.helpers import get_candidate_edges
-from gpa.datasets.attribution import DetectionGraph
-from gpa.models.encoders import ENCODER_REGISTRY
-from gpa.models.link_predictors import LINK_PREDICTOR_REGISTRY
+from src.common.enums import EncoderType
+from src.common.enums import LinkPredictorType
+from src.common.helpers import get_candidate_edges
+from src.datasets.attribution import DetectionGraph
+from src.models.encoders import ENCODER_REGISTRY
+from src.models.link_predictors import LINK_PREDICTOR_REGISTRY
 
 
 class PriceAttributor(nn.Module):

@@ -12,9 +12,9 @@ from open_clip import CLIP
 from PIL import Image
 from tqdm import tqdm
 
-from gpa.common.objects import GraphComponents
-from gpa.common.objects import ProductPriceGroup
-from gpa.common.objects import UPCGroup
+from src.common.objects import GraphComponents
+from src.common.objects import ProductPriceGroup
+from src.common.objects import UPCGroup
 
 
 def csv_array_str_to_list(x: str) -> list[str]:
