@@ -6,9 +6,9 @@ import yaml
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 
-from src.configs import TrainingConfig
-from src.datamodules import PriceAttributionDataModule
-from src.models.attributors import LightningPriceAttributor
+from gpa.configs import TrainingConfig
+from gpa.datamodules import PriceAttributionDataModule
+from gpa.models.attributors import LightningPriceAttributor
 
 
 def train(config: TrainingConfig):

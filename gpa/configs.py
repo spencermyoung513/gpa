@@ -2,9 +2,9 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from src.common.enums import Accelerator
-from src.common.enums import EncoderType
-from src.common.enums import LinkPredictorType
+from gpa.common.enums import Accelerator
+from gpa.common.enums import EncoderType
+from gpa.common.enums import LinkPredictorType
 
 
 class ModelConfig(BaseModel):

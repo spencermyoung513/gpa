@@ -3,7 +3,7 @@ from typing import Literal
 import torch
 from torch import nn
 
-from src.common.enums import LinkPredictorType
+from gpa.common.enums import LinkPredictorType
 
 
 class LinkPredictor(nn.Module):

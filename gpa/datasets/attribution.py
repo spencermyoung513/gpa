@@ -9,12 +9,12 @@ from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
 from tqdm import tqdm
 
-from src.common.constants import IS_PRICE
-from src.common.constants import IS_PRODUCT
-from src.common.helpers import build_graph_from_detections
-from src.common.objects import GraphComponents
-from src.common.objects import ProductPriceGroup
-from src.common.objects import UPCGroup
+from gpa.common.constants import IS_PRICE
+from gpa.common.constants import IS_PRODUCT
+from gpa.common.helpers import build_graph_from_detections
+from gpa.common.objects import GraphComponents
+from gpa.common.objects import ProductPriceGroup
+from gpa.common.objects import UPCGroup
 
 
 class DetectionGraph(Data):
