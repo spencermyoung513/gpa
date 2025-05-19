@@ -6,7 +6,7 @@ This is the official repository for "Graph-based Price Attribution" (GPA), a nov
 
 ### Install Project Dependencies
 
-`gpa` is managed via the `uv` package manager ((installation instructions)[https://docs.astral.sh/uv/getting-started/installation/]). To install the dependencies, simply run `uv sync` from the root directory of the repository after cloning.
+`gpa` is managed via the `uv` package manager ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/)). To install the dependencies, simply run `uv sync` from the root directory of the repository after cloning.
 
 ### Install Pre-Commit Hook
 
