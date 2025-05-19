@@ -6,11 +6,7 @@ This is the official repository for "Graph-based Price Attribution" (GPA), a nov
 
 ### Install Project Dependencies
 
-```bash
-conda create --name gpa python=3.10
-conda activate gpa
-pip install -r requirements.txt
-```
+`gpa` is managed via the `uv` package manager ((installation instructions)[https://docs.astral.sh/uv/getting-started/installation/]). To install the dependencies, simply run `uv sync` from the root directory of the repository after cloning.
 
 ### Install Pre-Commit Hook
 
@@ -24,15 +20,15 @@ When you commit new code, the pre-commit hook will run a series of scripts to st
 
 ## Viewing a Dataset
 
-To view a dataset, simply run the [Data Viewer](notebooks/data_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price graphs.
+To view a dataset, simply use the [Data Viewer](notebooks/data_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price graphs.
 
 
 ## Training a Model
 
-To train a model, first fill out a config (using the [example config](ignore/config.yaml) as a template). Then, run the [training script](training/train_attributor.py):
+To train a model, first fill out a config (using the [example config](src/gpa/training/sample_config.yaml) as a template). Then, run the [training script](src/gpa/training/train_attributor.py):
 
 ```bash
-python gpa/training/train_attributor.py --config path/to/your/config.yaml
+uv run train --config path/to/your/config.yaml
 ```
 
 The training script will save trained weights (both the best in terms of validation loss and the most recent copy) to the checkpoint directory specified in the config, and metrics will be saved to the log directory indicated in the config. Use the [Metrics Viewer](notebooks/metrics_viewer.ipynb) to view loss curves from a training run (and other metrics).

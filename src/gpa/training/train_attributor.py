@@ -3,12 +3,11 @@ from pathlib import Path
 
 import lightning as L
 import yaml
-from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.loggers import CSVLogger
-
 from gpa.configs import TrainingConfig
 from gpa.datamodules import PriceAttributionDataModule
 from gpa.models.attributors import LightningPriceAttributor
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import CSVLogger
 
 
 def train(config: TrainingConfig):
@@ -60,7 +59,7 @@ def train(config: TrainingConfig):
     trainer.fit(model, datamodule=datamodule)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path)
     args = parser.parse_args()
@@ -68,3 +67,7 @@ if __name__ == "__main__":
         config_dict = yaml.safe_load(f)
     config = TrainingConfig(**config_dict)
     train(config)
+
+
+if __name__ == "__main__":
+    main()

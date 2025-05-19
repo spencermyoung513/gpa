@@ -1,10 +1,9 @@
 import torch
+from gpa.common.enums import EncoderType
 from torch import nn
 from torch.nn.functional import relu
 from torch_geometric.nn import GATv2Conv
 from torch_geometric.nn import TransformerConv
-
-from gpa.common.enums import EncoderType
 
 
 class Encoder(nn.Module):

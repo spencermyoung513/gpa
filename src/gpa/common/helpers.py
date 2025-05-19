@@ -2,11 +2,10 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
-from torch_geometric.data import Batch
-
 from gpa.common.constants import IS_PRICE
 from gpa.common.constants import IS_PRODUCT
 from gpa.common.objects import UndirectedGraph
+from torch_geometric.data import Batch
 
 
 def min_max_normalize(x: torch.Tensor) -> torch.Tensor:
@@ -14,7 +13,9 @@ def min_max_normalize(x: torch.Tensor) -> torch.Tensor:
     return (x - x.min()) / (x.max() - x.min() + 1e-6)
 
 
-def edge_index_diff(edge_index_a: torch.Tensor, edge_index_b: torch.Tensor) -> torch.Tensor:
+def edge_index_diff(
+    edge_index_a: torch.Tensor, edge_index_b: torch.Tensor
+) -> torch.Tensor:
     """Return the edge index containing only edges in `edge_index_a` that are not in `edge_index_b`."""
     set_a = set(map(tuple, edge_index_a.T.tolist()))
     set_b = set(map(tuple, edge_index_b.T.tolist()))
@@ -81,7 +82,9 @@ def build_graph_from_detections(
     edge_spatial_proximity = min_max_normalize(edge_spatial_proximity)
 
     # Compute visual proximity scores.
-    prod_embeddings = torch.stack([product_embeddings[id] for id in prod_bbox_ids], dim=0)
+    prod_embeddings = torch.stack(
+        [product_embeddings[id] for id in prod_bbox_ids], dim=0
+    )
     normed_prod_embeddings = F.normalize(prod_embeddings, dim=1)
     prod_cosine_similarities = normed_prod_embeddings @ normed_prod_embeddings.T
     prod_visual_proximity = (1 + prod_cosine_similarities) / 2
@@ -90,7 +93,9 @@ def build_graph_from_detections(
     edge_visual_proximity[prod_prod_edges] = prod_visual_proximity[
         edge_index[0, prod_prod_edges], edge_index[1, prod_prod_edges]
     ]
-    price_embeddings = torch.stack([price_embeddings[id] for id in price_bbox_ids], dim=0)
+    price_embeddings = torch.stack(
+        [price_embeddings[id] for id in price_bbox_ids], dim=0
+    )
     normed_price_embeddings = F.normalize(price_embeddings, dim=1)
     price_cosine_similarities = normed_price_embeddings @ normed_price_embeddings.T
     price_visual_proximity = (1 + price_cosine_similarities) / 2
@@ -104,9 +109,13 @@ def build_graph_from_detections(
     edge_attr = torch.stack([edge_spatial_proximity, edge_visual_proximity], dim=1)
 
     # Get a map that allows us to look up where a bounding box is in the node tensor.
-    id_to_idx = {bbox_id: idx for idx, bbox_id in enumerate(prod_bbox_ids + price_bbox_ids)}
+    id_to_idx = {
+        bbox_id: idx for idx, bbox_id in enumerate(prod_bbox_ids + price_bbox_ids)
+    }
 
-    return UndirectedGraph(id_to_idx=id_to_idx, x=x, edge_index=edge_index, edge_attr=edge_attr)
+    return UndirectedGraph(
+        id_to_idx=id_to_idx, x=x, edge_index=edge_index, edge_attr=edge_attr
+    )
 
 
 def plot_bboxes(
@@ -206,7 +215,9 @@ def connect_products_with_nearest_price_tag(
     return torch.stack([product_indices, nearest_price_tensor], dim=0)
 
 
-def get_candidate_edges(batch: Batch, balanced: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
+def get_candidate_edges(
+    batch: Batch, balanced: bool = True
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Given a batch of graphs (represented as a mega-graph with a block diagonal adjacency matrix), return a set of candidate edges (of which some are fake and some are present in the ground truth labels).
 
     Args:
@@ -221,13 +232,16 @@ def get_candidate_edges(batch: Batch, balanced: bool = True) -> tuple[torch.Tens
     scene_indices = sorted(batch.batch.unique().tolist())
 
     for scene_idx in scene_indices:
-
         # Get the global indices that correspond to the current scene.
         current_scene_indices = torch.where(batch.batch == scene_idx)[0]
 
         # From the saved data, retrieve the ground-truth prod-price edges in the current scene (to teach the model what to look for).
-        src_in_scene = torch.isin(batch.gt_prod_price_edge_index[0], current_scene_indices)
-        dst_in_scene = torch.isin(batch.gt_prod_price_edge_index[1], current_scene_indices)
+        src_in_scene = torch.isin(
+            batch.gt_prod_price_edge_index[0], current_scene_indices
+        )
+        dst_in_scene = torch.isin(
+            batch.gt_prod_price_edge_index[1], current_scene_indices
+        )
         real_edges_in_scene: torch.Tensor = batch.gt_prod_price_edge_index[
             :, src_in_scene & dst_in_scene
         ]
@@ -240,7 +254,10 @@ def get_candidate_edges(batch: Batch, balanced: bool = True) -> tuple[torch.Tens
             price_indices=torch.where(batch.x[current_scene_indices, -1] == 0)[0],
         )
         candidate_edges = torch.stack(
-            [current_scene_indices[candidate_edges[0]], current_scene_indices[candidate_edges[1]]],
+            [
+                current_scene_indices[candidate_edges[0]],
+                current_scene_indices[candidate_edges[1]],
+            ],
             dim=0,
         )
         candidate_edges = torch.cat([candidate_edges, candidate_edges.flip(0)], dim=1)
@@ -253,10 +270,12 @@ def get_candidate_edges(batch: Batch, balanced: bool = True) -> tuple[torch.Tens
                 continue
             n_samples = min(n_positive, n_negative)
             real_edges_in_scene = real_edges_in_scene[
-                :, torch.multinomial(torch.ones(n_positive), n_samples, replacement=False)
+                :,
+                torch.multinomial(torch.ones(n_positive), n_samples, replacement=False),
             ]
             fake_edges_in_scene = fake_edges_in_scene[
-                :, torch.multinomial(torch.ones(n_negative), n_samples, replacement=False)
+                :,
+                torch.multinomial(torch.ones(n_negative), n_samples, replacement=False),
             ]
 
         real_edges.append(real_edges_in_scene)
@@ -264,10 +283,14 @@ def get_candidate_edges(batch: Batch, balanced: bool = True) -> tuple[torch.Tens
 
     # Form a combined edge index for positive and negative edges across all scenes in the batch.
     real_edges = (
-        torch.cat(real_edges, dim=-1) if real_edges else torch.empty((2, 0), dtype=torch.long)
+        torch.cat(real_edges, dim=-1)
+        if real_edges
+        else torch.empty((2, 0), dtype=torch.long)
     )
     fake_edges = (
-        torch.cat(fake_edges, dim=-1) if fake_edges else torch.empty((2, 0), dtype=torch.long)
+        torch.cat(fake_edges, dim=-1)
+        if fake_edges
+        else torch.empty((2, 0), dtype=torch.long)
     )
 
     return real_edges, fake_edges

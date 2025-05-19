@@ -4,17 +4,16 @@ from typing import Callable
 
 import matplotlib.pyplot as plt
 import torch
-from matplotlib import colormaps
-from torch_geometric.data import Data
-from torch_geometric.data import InMemoryDataset
-from tqdm import tqdm
-
 from gpa.common.constants import IS_PRICE
 from gpa.common.constants import IS_PRODUCT
 from gpa.common.helpers import build_graph_from_detections
 from gpa.common.objects import GraphComponents
 from gpa.common.objects import ProductPriceGroup
 from gpa.common.objects import UPCGroup
+from matplotlib import colormaps
+from torch_geometric.data import Data
+from torch_geometric.data import InMemoryDataset
+from tqdm import tqdm
 
 
 class DetectionGraph(Data):
@@ -122,7 +121,9 @@ class DetectionGraph(Data):
         src_is_price = torch.isin(self.edge_index[0], self.price_indices)
         dst_is_product = torch.isin(self.edge_index[1], self.product_indices)
         dst_is_price = torch.isin(self.edge_index[1], self.price_indices)
-        is_prod_price_edge = (src_is_product & dst_is_price) | (src_is_price & dst_is_product)
+        is_prod_price_edge = (src_is_product & dst_is_price) | (
+            src_is_price & dst_is_product
+        )
 
         for j in range(self.edge_index.shape[1]):
             weight = self.edge_attr[j].norm(p=2)
@@ -168,7 +169,9 @@ class DetectionGraph(Data):
         """
         edge_indices = []
         for group in upc_groups:
-            group_indices = torch.tensor([id_to_idx[bbox_id] for bbox_id in group.bbox_ids])
+            group_indices = torch.tensor(
+                [id_to_idx[bbox_id] for bbox_id in group.bbox_ids]
+            )
             if group_indices.numel() == 0:
                 continue
             edge_indices.append(torch.cartesian_prod(group_indices, group_indices).T)
@@ -196,7 +199,9 @@ class DetectionGraph(Data):
             product_indices = torch.tensor(
                 [id_to_idx[bbox_id] for bbox_id in group.product_bbox_ids]
             )
-            price_indices = torch.tensor([id_to_idx[bbox_id] for bbox_id in group.price_bbox_ids])
+            price_indices = torch.tensor(
+                [id_to_idx[bbox_id] for bbox_id in group.price_bbox_ids]
+            )
             if product_indices.numel() == 0 or price_indices.numel() == 0:
                 continue
             one_way = torch.cartesian_prod(product_indices, price_indices).T
@@ -248,6 +253,7 @@ class PriceAttributionDataset(InMemoryDataset):
     def process(self):
         raw_graph_components = torch.load(self.raw_paths[0], weights_only=True)
         data_list = [
-            DetectionGraph.build(GraphComponents(**g)) for g in tqdm(raw_graph_components)
+            DetectionGraph.build(GraphComponents(**g))
+            for g in tqdm(raw_graph_components)
         ]
         self.save(data_list, self.processed_paths[0])

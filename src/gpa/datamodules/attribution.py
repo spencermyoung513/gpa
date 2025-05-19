@@ -1,9 +1,8 @@
 from pathlib import Path
 
 import lightning as L
-from torch_geometric.loader import DataLoader
-
 from gpa.datasets.attribution import PriceAttributionDataset
+from torch_geometric.loader import DataLoader
 
 
 class PriceAttributionDataModule(L.LightningDataModule):

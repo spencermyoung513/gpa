@@ -1,9 +1,8 @@
 from typing import Literal
 
 import torch
-from torch import nn
-
 from gpa.common.enums import LinkPredictorType
+from torch import nn
 
 
 class LinkPredictor(nn.Module):
@@ -28,7 +27,9 @@ class LinkPredictor(nn.Module):
 
 class MLPLinkPredictor(LinkPredictor):
     def __init__(
-        self, layer_widths: list[int], strategy: Literal["concat", "hadamard", "add"] = "hadamard"
+        self,
+        layer_widths: list[int],
+        strategy: Literal["concat", "hadamard", "add"] = "hadamard",
     ):
         super().__init__()
 

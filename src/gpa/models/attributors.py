@@ -3,6 +3,12 @@ from typing import Literal
 import lightning as L
 import torch
 import torch.nn.functional as F
+from gpa.common.enums import EncoderType
+from gpa.common.enums import LinkPredictorType
+from gpa.common.helpers import get_candidate_edges
+from gpa.datasets.attribution import DetectionGraph
+from gpa.models.encoders import ENCODER_REGISTRY
+from gpa.models.link_predictors import LINK_PREDICTOR_REGISTRY
 from torch import nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -10,13 +16,6 @@ from torch_geometric.data import Batch
 from torchmetrics.classification import BinaryF1Score
 from torchmetrics.classification import BinaryPrecision
 from torchmetrics.classification import BinaryRecall
-
-from gpa.common.enums import EncoderType
-from gpa.common.enums import LinkPredictorType
-from gpa.common.helpers import get_candidate_edges
-from gpa.datasets.attribution import DetectionGraph
-from gpa.models.encoders import ENCODER_REGISTRY
-from gpa.models.link_predictors import LINK_PREDICTOR_REGISTRY
 
 
 class PriceAttributor(nn.Module):
@@ -149,9 +148,13 @@ class LightningPriceAttributor(L.LightningModule):
             recall = self.val_recall
             f1 = self.val_f1
         else:
-            raise NotImplementedError("Unsupported step_type passed to PriceAttributor._step")
+            raise NotImplementedError(
+                "Unsupported step_type passed to PriceAttributor._step"
+            )
 
-        real_edges, fake_edges = get_candidate_edges(batch, balanced=self.balanced_edge_sampling)
+        real_edges, fake_edges = get_candidate_edges(
+            batch, balanced=self.balanced_edge_sampling
+        )
         loss = torch.tensor(0.0, device=self.device, requires_grad=True)
         if real_edges.size(1) > 0:
             pos_preds = self(
@@ -224,7 +227,9 @@ class LightningPriceAttributor(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        scheduler = CosineAnnealingLR(optimizer, T_max=self.num_epochs, eta_min=self.lr / 10)
+        scheduler = CosineAnnealingLR(
+            optimizer, T_max=self.num_epochs, eta_min=self.lr / 10
+        )
         return {
             "optimizer": optimizer,
             "lr_scheduler": scheduler,
