@@ -36,3 +36,14 @@ The training script will save trained weights (both the best in terms of validat
 ## Evaluating a Model
 
 To get a qualitative sense of how well a model performs for price attribution, use the [Predictions Viewer](notebooks/predictions_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price attribution predictions (and comparing them to the ground truth).
+
+
+## Development
+
+### Managing Dependencies
+
+To add a new dependency to the project, run `uv add <package-name>`. This will install the dependency into uv's managed .venv and automatically update the `pyproject.toml` file and the `uv.lock` file, ensuring that the dependency is available for all users of the project who run `uv sync`.
+
+To remove a dependency, run `uv remove <package-name>`. This will perform the reverse of `uv add` (including updating the `pyproject.toml` and `uv.lock` files).
+
+See [uv's documentation](https://docs.astral.sh/uv/guides/projects/#managing-dependencies) for more details.
