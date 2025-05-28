@@ -18,7 +18,7 @@ class UndirectedGraph(BaseModel):
     id_to_idx: dict[str, int]
     x: torch.Tensor
     edge_index: torch.LongTensor
-    edge_attr: torch.Tensor
+    edge_attr: torch.Tensor | None = None
     model_config = {"arbitrary_types_allowed": True}
 
     @model_validator(mode="after")
@@ -49,7 +49,10 @@ class UndirectedGraph(BaseModel):
 
     @model_validator(mode="after")
     def check_edge_attr_shape(self):
-        if self.edge_attr.shape[0] != self.edge_index.shape[1]:
+        if (
+            self.edge_attr is not None
+            and self.edge_attr.shape[0] != self.edge_index.shape[1]
+        ):
             raise ValueError(
                 "Edge attributes must have the same number of edges as the edge index."
             )

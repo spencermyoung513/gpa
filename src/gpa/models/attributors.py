@@ -19,6 +19,8 @@ from torchmetrics.classification import BinaryRecall
 
 
 class PriceAttributor(nn.Module):
+    """A neural network that encodes a graph of object detections and predicts which products and prices share the is-priced-at relation."""
+
     def __init__(
         self,
         encoder_type: EncoderType,
@@ -26,6 +28,14 @@ class PriceAttributor(nn.Module):
         link_predictor_type: LinkPredictorType,
         link_predictor_settings: dict,
     ):
+        """Initialize a `PriceAttributor`.
+
+        Args:
+            encoder_type (EncoderType): The type of encoder to use.
+            encoder_settings (dict): The settings for the encoder.
+            link_predictor_type (LinkPredictorType): The type of link predictor to use.
+            link_predictor_settings (dict): The settings for the link predictor.
+        """
         super().__init__()
         self.encoder = ENCODER_REGISTRY[encoder_type](**encoder_settings)
         self.link_predictor = LINK_PREDICTOR_REGISTRY[link_predictor_type](
@@ -36,7 +46,6 @@ class PriceAttributor(nn.Module):
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
-        edge_attr: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
     ) -> torch.Tensor:
@@ -47,18 +56,19 @@ class PriceAttributor(nn.Module):
         Args:
             x (torch.Tensor): Node embeddings, with shape (n, node_dim).
             edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
-            edge_attr (torch.Tensor): Edge attributes, with shape (num_edges, edge_dim).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
 
         Returns:
             torch.Tensor: Logits representing the link probability for each pair, with shape (num_links_to_predict,).
         """
-        h = self.encoder(x, edge_index, edge_attr)
-        return self.link_predictor(h, src, dst)
+        h = self.encoder(x=x, edge_index=edge_index)
+        return self.link_predictor(x=h, src=src, dst=dst)
 
 
 class LightningPriceAttributor(L.LightningModule):
+    """A `LightningModule` wrapper for training a `PriceAttributor`."""
+
     def __init__(
         self,
         encoder_type: EncoderType,
@@ -70,6 +80,18 @@ class LightningPriceAttributor(L.LightningModule):
         weight_decay: float = 1e-5,
         balanced_edge_sampling: bool = True,
     ):
+        """Initialize a `LightningPriceAttributor`.
+
+        Args:
+            encoder_type (EncoderType): The type of encoder to use.
+            encoder_settings (dict): The settings for the encoder.
+            link_predictor_type (LinkPredictorType): The type of link predictor to use.
+            link_predictor_settings (dict): The settings for the link predictor.
+            num_epochs (int): The number of epochs to train for.
+            lr (float): The learning rate.
+            weight_decay (float): The weight decay.
+            balanced_edge_sampling (bool): Whether to sample edges balancedly.
+        """
         super().__init__()
         self.save_hyperparameters()
         self.num_epochs = num_epochs
@@ -87,7 +109,6 @@ class LightningPriceAttributor(L.LightningModule):
         self.example_input_array = {
             "x": torch.randn(3, DetectionGraph.NODE_DIM),
             "edge_index": torch.tensor([[0, 1, 2], [0, 1, 2]]),
-            "edge_attr": torch.randn(3, DetectionGraph.EDGE_DIM),
             "src": torch.tensor([0, 1]),
             "dst": torch.tensor([1, 0]),
         }
@@ -103,7 +124,6 @@ class LightningPriceAttributor(L.LightningModule):
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
-        edge_attr: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
     ) -> torch.Tensor:
@@ -114,14 +134,13 @@ class LightningPriceAttributor(L.LightningModule):
         Args:
             x (torch.Tensor): Node embeddings, with shape (n, node_dim).
             edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
-            edge_attr (torch.Tensor): Edge attributes, with shape (num_edges, edge_dim).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
 
         Returns:
             torch.Tensor: Logits representing the link probability for each pair, with shape (num_links_to_predict,).
         """
-        return self.model(x, edge_index, edge_attr, src, dst)
+        return self.model(x=x, edge_index=edge_index, src=src, dst=dst)
 
     def training_step(self, batch: Batch, batch_idx: int):
         return self._step(batch, step_type="train")
@@ -160,7 +179,6 @@ class LightningPriceAttributor(L.LightningModule):
             pos_preds = self(
                 x=batch.x,
                 edge_index=batch.edge_index,
-                edge_attr=batch.edge_attr,
                 src=real_edges[0],
                 dst=real_edges[1],
             )
@@ -177,7 +195,6 @@ class LightningPriceAttributor(L.LightningModule):
             neg_preds = self(
                 x=batch.x,
                 edge_index=batch.edge_index,
-                edge_attr=batch.edge_attr,
                 src=fake_edges[0],
                 dst=fake_edges[1],
             )

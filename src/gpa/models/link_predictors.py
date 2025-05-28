@@ -6,6 +6,8 @@ from torch import nn
 
 
 class LinkPredictor(nn.Module):
+    """A neural network that predicts the likelihood of a link between a pair of nodes in a graph."""
+
     def forward(
         self,
         x: torch.Tensor,
@@ -26,11 +28,19 @@ class LinkPredictor(nn.Module):
 
 
 class MLPLinkPredictor(LinkPredictor):
+    """A link predictor that uses a series of linear layers to predict link probability."""
+
     def __init__(
         self,
         layer_widths: list[int],
         strategy: Literal["concat", "hadamard", "add"] = "hadamard",
     ):
+        """Initialize an `MLPLinkPredictor`.
+
+        Args:
+            layer_widths (list[int]): The desired widths of the linear layers in the MLP.
+            strategy (Literal["concat", "hadamard", "add"]): The strategy used to combine the node embeddings.
+        """
         super().__init__()
 
         self.strategy = strategy
@@ -60,13 +70,17 @@ class MLPLinkPredictor(LinkPredictor):
 
 
 class InnerProductLinkPredictor(LinkPredictor):
+    """A link predictor that uses the inner product of normalized node embeddings to predict link probability."""
+
     def forward(
         self,
         x: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
     ) -> torch.Tensor:
-        return torch.sum(x[src] * x[dst], dim=1)
+        x_src = x[src] / x[src].norm(dim=1, keepdim=True)
+        x_dst = x[dst] / x[dst].norm(dim=1, keepdim=True)
+        return torch.sum(x_src * x_dst, dim=1)
 
 
 LINK_PREDICTOR_REGISTRY: dict[LinkPredictorType, type[LinkPredictor]] = {

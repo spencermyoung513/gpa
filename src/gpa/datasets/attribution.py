@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import torch
 from gpa.common.constants import IS_PRICE
 from gpa.common.constants import IS_PRODUCT
-from gpa.common.helpers import build_graph_from_detections
+from gpa.common.helpers import get_node_embeddings_from_detections
 from gpa.common.objects import GraphComponents
 from gpa.common.objects import ProductPriceGroup
 from gpa.common.objects import UPCGroup
@@ -26,14 +26,12 @@ class DetectionGraph(Data):
     # Base attributes (part of the base `Data` class)
     x: torch.Tensor
     edge_index: torch.LongTensor
-    edge_attr: torch.Tensor
 
     # Custom attributes
     graph_id: str
     bbox_ids: list[str]
     product_indices: torch.LongTensor
     price_indices: torch.LongTensor
-    shared_upc_edge_index: torch.LongTensor
     gt_prod_price_edge_index: torch.LongTensor
 
     @classmethod
@@ -41,45 +39,44 @@ class DetectionGraph(Data):
         """Assemble the provided components into a `DetectionGraph`.
 
         The node embeddings are made up of the (x, y, w, h) bbox coordinates and an indicator of if a node is a product or a price tag.
-
-        The edge index fully connects the initial graph. The edge attributes contain a dimension for spatial proximity (normalized inverse euclidean distance)
-        and a dimension for visual proximity (only relevant for prod-prod edges) obtained from cosine similarity.
+        We initially connect all product nodes that share the same UPC. All other nodes are isolated.
 
         Args:
             graph_components (GraphComponents): The components of the graph to assemble.
+
+        Returns:
+            DetectionGraph: The assembled graph.
         """
-        base_graph = build_graph_from_detections(
+        x, id_to_idx = get_node_embeddings_from_detections(
             product_bboxes=graph_components.product_bboxes,
             product_embeddings=graph_components.product_embeddings,
             price_bboxes=graph_components.price_bboxes,
             price_embeddings=graph_components.price_embeddings,
         )
         shared_upc_edge_index = cls._get_shared_upc_edge_index(
-            id_to_idx=base_graph.id_to_idx,
+            id_to_idx=id_to_idx,
             upc_groups=graph_components.upc_groups,
         )
         gt_prod_price_edge_index = cls._get_gt_prod_price_edge_index(
-            id_to_idx=base_graph.id_to_idx,
+            id_to_idx=id_to_idx,
             prod_price_groups=graph_components.prod_price_groups,
         )
-        product_mask = base_graph.x[:, cls.INDICATOR_IDX] == IS_PRODUCT
-        price_mask = base_graph.x[:, cls.INDICATOR_IDX] == IS_PRICE
+        product_mask = x[:, cls.INDICATOR_IDX] == IS_PRODUCT
+        price_mask = x[:, cls.INDICATOR_IDX] == IS_PRICE
         product_indices = torch.argwhere(product_mask).flatten()
         price_indices = torch.argwhere(price_mask).flatten()
 
-        bbox_ids = [None] * len(base_graph.id_to_idx)
-        for bbox_id, idx in base_graph.id_to_idx.items():
+        bbox_ids = [None] * len(id_to_idx)
+        for bbox_id, idx in id_to_idx.items():
             bbox_ids[idx] = bbox_id
 
         return cls(
-            x=base_graph.x,
-            edge_index=base_graph.edge_index,
-            edge_attr=base_graph.edge_attr,
+            x=x,
+            edge_index=shared_upc_edge_index,
             graph_id=graph_components.graph_id,
             bbox_ids=bbox_ids,
             product_indices=product_indices,
             price_indices=price_indices,
-            shared_upc_edge_index=shared_upc_edge_index,
             gt_prod_price_edge_index=gt_prod_price_edge_index,
         )
 
@@ -126,7 +123,7 @@ class DetectionGraph(Data):
         )
 
         for j in range(self.edge_index.shape[1]):
-            weight = self.edge_attr[j].norm(p=2)
+            weight = self.edge_attr[j].norm(p=2) if self.edge_attr is not None else 1.0
             src = self.edge_index[0, j]
             dst = self.edge_index[1, j]
             if prod_price_only and not is_prod_price_edge[j]:
