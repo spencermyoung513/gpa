@@ -46,6 +46,7 @@ class PriceAttributor(nn.Module):
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
+        global_embedding: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
         cluster_assignment: torch.Tensor | None = None,
@@ -57,6 +58,7 @@ class PriceAttributor(nn.Module):
         Args:
             x (torch.Tensor): Node embeddings, with shape (n, node_dim).
             edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
+            global_embedding (torch.Tensor): The global embedding of the graph, with shape (global_embedding_dim,).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             cluster_assignment (torch.Tensor | None, optional): A vector assigning each node to a cluster (e.g. a UPC group), with shape (n,). If None, no clustering is assumed.
@@ -67,6 +69,7 @@ class PriceAttributor(nn.Module):
         h = self.encoder(
             x=x,
             edge_index=edge_index,
+            global_embedding=global_embedding,
             cluster_assignment=cluster_assignment,
         )
         return self.link_predictor(x=h, src=src, dst=dst)
@@ -115,6 +118,7 @@ class LightningPriceAttributor(L.LightningModule):
         self.example_input_array = {
             "x": torch.randn(3, DetectionGraph.NODE_DIM),
             "edge_index": torch.tensor([[0, 1, 2], [0, 1, 2]]),
+            "global_embedding": torch.randn(3, DetectionGraph.GLOBAL_EMBEDDING_DIM),
             "src": torch.tensor([0, 1]),
             "dst": torch.tensor([1, 0]),
             "cluster_assignment": torch.tensor([0, 0, 1]),
@@ -131,6 +135,7 @@ class LightningPriceAttributor(L.LightningModule):
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
+        global_embedding: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
         cluster_assignment: torch.Tensor | None = None,
@@ -142,6 +147,7 @@ class LightningPriceAttributor(L.LightningModule):
         Args:
             x (torch.Tensor): Node embeddings, with shape (n, node_dim).
             edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
+            global_embedding (torch.Tensor): The global embedding of the graph, with shape (global_embedding_dim,).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             cluster_assignment (torch.Tensor | None, optional): A vector assigning each node to a cluster (e.g. a UPC group), with shape (n,). If None, no clustering is assumed.
@@ -152,6 +158,7 @@ class LightningPriceAttributor(L.LightningModule):
         return self.model(
             x=x,
             edge_index=edge_index,
+            global_embedding=global_embedding,
             src=src,
             dst=dst,
             cluster_assignment=cluster_assignment,
@@ -194,6 +201,7 @@ class LightningPriceAttributor(L.LightningModule):
             pos_preds = self(
                 x=batch.x,
                 edge_index=batch.edge_index,
+                global_embedding=batch.global_embedding[batch.batch],
                 src=real_edges[0],
                 dst=real_edges[1],
                 cluster_assignment=batch.upc_clusters,
@@ -211,6 +219,7 @@ class LightningPriceAttributor(L.LightningModule):
             neg_preds = self(
                 x=batch.x,
                 edge_index=batch.edge_index,
+                global_embedding=batch.global_embedding[batch.batch],
                 src=fake_edges[0],
                 dst=fake_edges[1],
                 cluster_assignment=batch.upc_clusters,

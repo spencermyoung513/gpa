@@ -21,6 +21,7 @@ class DetectionGraph(Data):
     """A graph of product and price tag detections."""
 
     NODE_DIM = 5  # (x, y, w, h, is_product)
+    GLOBAL_EMBEDDING_DIM = 512  # CLIP embedding dimension
     INDICATOR_IDX = -1  # Index of the is_product indicator in the node embeddings.
 
     # Base attributes (part of the base `Data` class)
@@ -30,6 +31,7 @@ class DetectionGraph(Data):
     # Custom attributes
     graph_id: str
     bbox_ids: list[str]
+    global_embedding: torch.Tensor
     product_indices: torch.LongTensor
     price_indices: torch.LongTensor
     upc_clusters: torch.LongTensor
@@ -78,6 +80,7 @@ class DetectionGraph(Data):
             edge_index=prod_prod_edge_index,
             graph_id=graph_components.graph_id,
             bbox_ids=bbox_ids,
+            global_embedding=graph_components.global_embedding,
             product_indices=product_indices,
             price_indices=price_indices,
             gt_prod_price_edge_index=gt_prod_price_edge_index,
@@ -214,6 +217,8 @@ class DetectionGraph(Data):
     def __cat_dim__(self, key, value, *args, **kwargs):
         if key in ("product_indices", "price_indices", "upc_clusters"):
             return 0
+        elif key == "global_embedding":
+            return None
         return super().__cat_dim__(key, value, *args, **kwargs)
 
     def __inc__(self, key, value, *args, **kwargs):
