@@ -7,3 +7,4 @@ chkp/
 logs/
 ignore/
 .ruff_cache/
+.idea/
