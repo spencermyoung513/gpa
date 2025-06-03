@@ -50,6 +50,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
             dataset=self.train,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            persistent_workers=self.num_workers > 0,
             shuffle=True,
         )
 
@@ -58,6 +59,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
             dataset=self.val,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            persistent_workers=self.num_workers > 0,
             shuffle=False,
         )
 
@@ -67,5 +69,6 @@ class PriceAttributionDataModule(L.LightningDataModule):
             dataset=self.inference,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            persistent_workers=self.num_workers > 0,
             shuffle=False,
         )

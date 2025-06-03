@@ -55,6 +55,8 @@ def train(config: TrainingConfig):
         data_dir=config.dataset_dir,
         batch_size=config.batch_size,
         num_workers=config.num_workers,
+        a=config.a,
+        b=config.b,
     )
     trainer.fit(model, datamodule=datamodule)
 

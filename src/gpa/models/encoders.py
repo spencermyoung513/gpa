@@ -4,6 +4,7 @@ from torch import nn
 from torch.nn.functional import relu
 from torch_geometric.nn import GATv2Conv
 from torch_geometric.nn import TransformerConv
+from torch_geometric.utils import scatter
 
 
 class Encoder(nn.Module):
@@ -20,21 +21,33 @@ class Encoder(nn.Module):
         self.node_hidden_dim = node_hidden_dim
         self.num_layers = num_layers
 
+    @property
+    def layers(self) -> torch.nn.ModuleList:
+        raise NotImplementedError("Should be implemented by subclass.")
+
     def forward(
         self,
         x: torch.Tensor,
-        edge_index: torch.Tensor,
+        edge_index: torch.LongTensor,
+        cluster_assignment: torch.LongTensor | None = None,
     ) -> torch.Tensor:
         """Encode the specified graph nodes.
 
         Args:
             x (torch.Tensor): Graph node embeddings, with shape (n, node_dim).
-            edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
+            edge_index (torch.LongTensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
+            cluster_assignment (torch.LongTensor | None, optional): A vector assigning each node to a cluster, with shape (n,). If None, no clustering is used. Otherwise, after the encoding layers have been applied, we average the node embeddings within each cluster.
 
         Returns:
             torch.Tensor: The encoded node embeddings, with shape (n, `self.node_hidden_dim`).
         """
-        raise NotImplementedError("Should be implemented by subclass.")
+        for layer in self.layers[:-1]:
+            x = relu(layer(x, edge_index=edge_index))
+        x = self.layers[-1](x, edge_index=edge_index)
+        if cluster_assignment is not None:
+            cluster_mean = scatter(x, cluster_assignment, dim=0, reduce="mean")
+            x = cluster_mean[cluster_assignment]
+        return x
 
 
 class TransformerEncoder(Encoder):
@@ -49,15 +62,9 @@ class TransformerEncoder(Encoder):
             [TransformerConv(-1, node_hidden_dim) for _ in range(self.num_layers)]
         )
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-    ) -> torch.Tensor:
-        for conv in self.convs[:-1]:
-            x = relu(conv(x, edge_index=edge_index))
-        x = self.convs[-1](x, edge_index=edge_index)
-        return x
+    @property
+    def layers(self) -> torch.nn.ModuleList:
+        return self.convs
 
 
 class GATEncoder(Encoder):
@@ -72,15 +79,9 @@ class GATEncoder(Encoder):
             [GATv2Conv(-1, node_hidden_dim) for _ in range(self.num_layers)]
         )
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-    ) -> torch.Tensor:
-        for conv in self.convs[:-1]:
-            x = relu(conv(x, edge_index=edge_index))
-        x = self.convs[-1](x, edge_index=edge_index)
-        return x
+    @property
+    def layers(self) -> torch.nn.ModuleList:
+        return self.convs
 
 
 ENCODER_REGISTRY: dict[EncoderType, type[Encoder]] = {

@@ -7,6 +7,7 @@ import torch
 from gpa.common.constants import IS_PRICE
 from gpa.common.constants import IS_PRODUCT
 from gpa.common.helpers import get_node_embeddings_from_detections
+from gpa.common.helpers import parse_into_subgraphs
 from gpa.common.objects import GraphComponents
 from gpa.common.objects import ProductPriceGroup
 from gpa.common.objects import UPCGroup
@@ -20,7 +21,6 @@ class DetectionGraph(Data):
     """A graph of product and price tag detections."""
 
     NODE_DIM = 5  # (x, y, w, h, is_product)
-    EDGE_DIM = 2  # (spatial_proximity, visual_proximity)
     INDICATOR_IDX = -1  # Index of the is_product indicator in the node embeddings.
 
     # Base attributes (part of the base `Data` class)
@@ -32,6 +32,7 @@ class DetectionGraph(Data):
     bbox_ids: list[str]
     product_indices: torch.LongTensor
     price_indices: torch.LongTensor
+    upc_clusters: torch.LongTensor
     gt_prod_price_edge_index: torch.LongTensor
 
     @classmethod
@@ -57,6 +58,7 @@ class DetectionGraph(Data):
             id_to_idx=id_to_idx,
             upc_groups=graph_components.upc_groups,
         )
+        upc_clusters = parse_into_subgraphs(shared_upc_edge_index, num_nodes=x.shape[0])
         gt_prod_price_edge_index = cls._get_gt_prod_price_edge_index(
             id_to_idx=id_to_idx,
             prod_price_groups=graph_components.prod_price_groups,
@@ -65,6 +67,7 @@ class DetectionGraph(Data):
         price_mask = x[:, cls.INDICATOR_IDX] == IS_PRICE
         product_indices = torch.argwhere(product_mask).flatten()
         price_indices = torch.argwhere(price_mask).flatten()
+        prod_prod_edge_index = torch.cartesian_prod(product_indices, product_indices).T
 
         bbox_ids = [None] * len(id_to_idx)
         for bbox_id, idx in id_to_idx.items():
@@ -72,12 +75,13 @@ class DetectionGraph(Data):
 
         return cls(
             x=x,
-            edge_index=shared_upc_edge_index,
+            edge_index=prod_prod_edge_index,
             graph_id=graph_components.graph_id,
             bbox_ids=bbox_ids,
             product_indices=product_indices,
             price_indices=price_indices,
             gt_prod_price_edge_index=gt_prod_price_edge_index,
+            upc_clusters=upc_clusters,
         )
 
     def plot(
@@ -208,12 +212,12 @@ class DetectionGraph(Data):
         return torch.cat(edge_indices, dim=1)
 
     def __cat_dim__(self, key, value, *args, **kwargs):
-        if key in ("product_indices", "price_indices"):
+        if key in ("product_indices", "price_indices", "upc_clusters"):
             return 0
         return super().__cat_dim__(key, value, *args, **kwargs)
 
     def __inc__(self, key, value, *args, **kwargs):
-        if key in ("product_indices", "price_indices"):
+        if key in ("product_indices", "price_indices", "upc_clusters"):
             return self.num_nodes
         return super().__inc__(key, value, *args, **kwargs)
 

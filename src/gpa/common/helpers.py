@@ -48,7 +48,7 @@ def get_node_embeddings_from_detections(
     price_bboxes: dict[str, torch.Tensor],
     price_embeddings: dict[str, torch.Tensor],
 ) -> tuple[torch.Tensor, dict[str, int]]:
-    """Build an undirected graph from the provided detections.
+    """Build a node embeddings matrix from the provided detections.
 
     Args:
         product_bboxes (dict[str, torch.Tensor]): Mapping from product bbox IDs to their respective coordinates (xywhn format).
