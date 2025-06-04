@@ -6,7 +6,6 @@ import torch.nn.functional as F
 from gpa.common.enums import EncoderType
 from gpa.common.enums import LinkPredictorType
 from gpa.common.helpers import get_candidate_edges
-from gpa.datasets.attribution import DetectionGraph
 from gpa.models.encoders import ENCODER_REGISTRY
 from gpa.models.link_predictors import LINK_PREDICTOR_REGISTRY
 from torch import nn
@@ -16,9 +15,12 @@ from torch_geometric.data import Batch
 from torchmetrics.classification import BinaryF1Score
 from torchmetrics.classification import BinaryPrecision
 from torchmetrics.classification import BinaryRecall
+from torchmetrics.wrappers import BootStrapper
 
 
 class PriceAttributor(nn.Module):
+    """A neural network that encodes a graph of object detections and predicts which products and prices share the is-priced-at relation."""
+
     def __init__(
         self,
         encoder_type: EncoderType,
@@ -26,6 +28,14 @@ class PriceAttributor(nn.Module):
         link_predictor_type: LinkPredictorType,
         link_predictor_settings: dict,
     ):
+        """Initialize a `PriceAttributor`.
+
+        Args:
+            encoder_type (EncoderType): The type of encoder to use.
+            encoder_settings (dict): The settings for the encoder.
+            link_predictor_type (LinkPredictorType): The type of link predictor to use.
+            link_predictor_settings (dict): The settings for the link predictor.
+        """
         super().__init__()
         self.encoder = ENCODER_REGISTRY[encoder_type](**encoder_settings)
         self.link_predictor = LINK_PREDICTOR_REGISTRY[link_predictor_type](
@@ -36,9 +46,9 @@ class PriceAttributor(nn.Module):
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
-        edge_attr: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
+        cluster_assignment: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Predict the probability that the node pairs indexed by src/dst are connected (conditioned on the input graph).
 
@@ -47,18 +57,24 @@ class PriceAttributor(nn.Module):
         Args:
             x (torch.Tensor): Node embeddings, with shape (n, node_dim).
             edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
-            edge_attr (torch.Tensor): Edge attributes, with shape (num_edges, edge_dim).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
+            cluster_assignment (torch.Tensor | None, optional): A vector assigning each node to a cluster (e.g. a UPC group), with shape (n,). If None, no clustering is assumed.
 
         Returns:
             torch.Tensor: Logits representing the link probability for each pair, with shape (num_links_to_predict,).
         """
-        h = self.encoder(x, edge_index, edge_attr)
-        return self.link_predictor(h, src, dst)
+        h = self.encoder(
+            x=x,
+            edge_index=edge_index,
+            cluster_assignment=cluster_assignment,
+        )
+        return self.link_predictor(x=h, src=src, dst=dst)
 
 
 class LightningPriceAttributor(L.LightningModule):
+    """A `LightningModule` wrapper for training / evaluating a `PriceAttributor`."""
+
     def __init__(
         self,
         encoder_type: EncoderType,
@@ -70,6 +86,18 @@ class LightningPriceAttributor(L.LightningModule):
         weight_decay: float = 1e-5,
         balanced_edge_sampling: bool = True,
     ):
+        """Initialize a `LightningPriceAttributor`.
+
+        Args:
+            encoder_type (EncoderType): The type of encoder to use.
+            encoder_settings (dict): The settings for the encoder.
+            link_predictor_type (LinkPredictorType): The type of link predictor to use.
+            link_predictor_settings (dict): The settings for the link predictor.
+            num_epochs (int): The number of epochs to train for.
+            lr (float): The learning rate.
+            weight_decay (float): The weight decay.
+            balanced_edge_sampling (bool): Whether to sample edges in a balanced manner (w.r.t. number of real/fake edges presented to the link predictor during training).
+        """
         super().__init__()
         self.save_hyperparameters()
         self.num_epochs = num_epochs
@@ -82,30 +110,20 @@ class LightningPriceAttributor(L.LightningModule):
             link_predictor_type=link_predictor_type,
             link_predictor_settings=link_predictor_settings,
         )
-
-        # For lazy initialization.
-        self.example_input_array = {
-            "x": torch.randn(3, DetectionGraph.NODE_DIM),
-            "edge_index": torch.tensor([[0, 1, 2], [0, 1, 2]]),
-            "edge_attr": torch.randn(3, DetectionGraph.EDGE_DIM),
-            "src": torch.tensor([0, 1]),
-            "dst": torch.tensor([1, 0]),
-        }
-
-        self.trn_precision = BinaryPrecision()
-        self.trn_recall = BinaryRecall()
-        self.trn_f1 = BinaryF1Score()
-        self.val_precision = BinaryPrecision()
-        self.val_recall = BinaryRecall()
-        self.val_f1 = BinaryF1Score()
+        self.trn_precision = BootStrapper(BinaryPrecision())
+        self.trn_recall = BootStrapper(BinaryRecall())
+        self.trn_f1 = BootStrapper(BinaryF1Score())
+        self.val_precision = BootStrapper(BinaryPrecision())
+        self.val_recall = BootStrapper(BinaryRecall())
+        self.val_f1 = BootStrapper(BinaryF1Score())
 
     def forward(
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
-        edge_attr: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
+        cluster_assignment: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Predict the probability that the node pairs indexed by src/dst are connected (conditioned on the input graph).
 
@@ -114,14 +132,20 @@ class LightningPriceAttributor(L.LightningModule):
         Args:
             x (torch.Tensor): Node embeddings, with shape (n, node_dim).
             edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
-            edge_attr (torch.Tensor): Edge attributes, with shape (num_edges, edge_dim).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
+            cluster_assignment (torch.Tensor | None, optional): A (n,) tensor assigning each node to a cluster (e.g. a UPC group). Before link prediction, all node embeddings within a cluster will be average-pooled. If None, no clustering is assumed.
 
         Returns:
-            torch.Tensor: Logits representing the link probability for each pair, with shape (num_links_to_predict,).
+            torch.Tensor: Logits representing the link probability for each specified pair, with shape (num_links_to_predict,).
         """
-        return self.model(x, edge_index, edge_attr, src, dst)
+        return self.model(
+            x=x,
+            edge_index=edge_index,
+            src=src,
+            dst=dst,
+            cluster_assignment=cluster_assignment,
+        )
 
     def training_step(self, batch: Batch, batch_idx: int):
         return self._step(batch, step_type="train")
@@ -151,45 +175,26 @@ class LightningPriceAttributor(L.LightningModule):
             raise NotImplementedError(
                 "Unsupported step_type passed to PriceAttributor._step"
             )
-
         real_edges, fake_edges = get_candidate_edges(
             batch, balanced=self.balanced_edge_sampling
         )
         loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-        if real_edges.size(1) > 0:
-            pos_preds = self(
-                x=batch.x,
-                edge_index=batch.edge_index,
-                edge_attr=batch.edge_attr,
-                src=real_edges[0],
-                dst=real_edges[1],
-            )
-            pos_targets = torch.ones_like(pos_preds)
-            pos_loss = F.binary_cross_entropy_with_logits(pos_preds, pos_targets)
-            loss = loss + pos_loss
+        for edges, label in [(real_edges, 1.0), (fake_edges, 0.0)]:
+            if edges.size(1) > 0:
+                logits = self(
+                    x=batch.x,
+                    edge_index=batch.edge_index,
+                    src=edges[0],
+                    dst=edges[1],
+                    cluster_assignment=batch.upc_clusters,
+                )
+                targets = torch.full_like(logits, fill_value=label)
+                loss += F.binary_cross_entropy_with_logits(logits, targets)
 
-            pos_probs = torch.sigmoid(pos_preds)
-            precision.update(pos_probs, pos_targets)
-            recall.update(pos_probs, pos_targets)
-            f1.update(pos_probs, pos_targets)
-
-        if fake_edges.size(1) > 0:
-            neg_preds = self(
-                x=batch.x,
-                edge_index=batch.edge_index,
-                edge_attr=batch.edge_attr,
-                src=fake_edges[0],
-                dst=fake_edges[1],
-            )
-            neg_targets = torch.zeros_like(neg_preds)
-            neg_loss = F.binary_cross_entropy_with_logits(neg_preds, neg_targets)
-            loss = loss + neg_loss
-
-            neg_probs = torch.sigmoid(neg_preds)
-            precision.update(neg_probs, neg_targets)
-            recall.update(neg_probs, neg_targets)
-            f1.update(neg_probs, neg_targets)
-
+                probs = torch.sigmoid(logits)
+                precision.update(probs, targets)
+                recall.update(probs, targets)
+                f1.update(probs, targets)
         self.log(
             f"{step_type}_loss",
             loss,
@@ -198,32 +203,31 @@ class LightningPriceAttributor(L.LightningModule):
             prog_bar=True,
             batch_size=batch.num_graphs,
         )
-        self.log(
-            f"{step_type}_precision",
-            precision,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=step_type == "val",
-            batch_size=batch.num_graphs,
-        )
-        self.log(
-            f"{step_type}_recall",
-            recall,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=step_type == "val",
-            batch_size=batch.num_graphs,
-        )
-        self.log(
-            f"{step_type}_f1",
-            f1,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=step_type == "val",
-            batch_size=batch.num_graphs,
-        )
-
         return loss
+
+    def on_validation_epoch_end(self):
+        precision = self.val_precision.compute()
+        recall = self.val_recall.compute()
+        f1 = self.val_f1.compute()
+
+        self.log("val_precision_mean", precision["mean"])
+        self.log("val_precision_std", precision["std"])
+        self.log("val_recall_mean", recall["mean"])
+        self.log("val_recall_std", recall["std"])
+        self.log("val_f1_mean", f1["mean"])
+        self.log("val_f1_std", f1["std"])
+
+    def on_train_epoch_end(self):
+        precision = self.trn_precision.compute()
+        recall = self.trn_recall.compute()
+        f1 = self.trn_f1.compute()
+
+        self.log("train_precision_mean", precision["mean"])
+        self.log("train_precision_std", precision["std"])
+        self.log("train_recall_mean", recall["mean"])
+        self.log("train_recall_std", recall["std"])
+        self.log("train_f1_mean", f1["mean"])
+        self.log("train_f1_std", f1["std"])
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

@@ -1,0 +1,46 @@
+import argparse
+from pathlib import Path
+
+import lightning as L
+import yaml
+from gpa.configs import TrainingConfig
+from gpa.datamodules import PriceAttributionDataModule
+from gpa.models.attributors import LightningPriceAttributor
+
+
+def evaluate(ckpt_path: Path):
+    config_path = Path(str(ckpt_path).replace("chkp", "logs")).with_name("config.yaml")
+    with open(config_path, "r") as f:
+        config = TrainingConfig(**yaml.safe_load(f))
+    trainer = L.Trainer(
+        accelerator=config.accelerator.value,
+        enable_model_summary=False,
+        logger=False,
+    )
+    model = LightningPriceAttributor.load_from_checkpoint(ckpt_path)
+    datamodule = PriceAttributionDataModule(
+        data_dir=config.dataset_dir,
+        batch_size=config.batch_size,
+        num_workers=config.num_workers,
+        # We omit a and b since they won't be used anyway (for inference).
+        use_visual_info=config.model.use_visual_info,
+        aggregate_by_upc=config.model.aggregate_by_upc,
+        use_spatially_invariant_coords=config.model.use_spatially_invariant_coords,
+        initial_connection_scheme=config.model.initial_connection_scheme,
+    )
+    datamodule.setup("")
+    metrics = trainer.validate(model, datamodule.inference_dataloader())[0]
+    results_path = config_path.parent / "eval_metrics.yaml"
+    with open(results_path, "w") as f:
+        yaml.dump(metrics, f)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ckpt", type=Path)
+    args = parser.parse_args()
+    evaluate(args.ckpt)
+
+
+if __name__ == "__main__":
+    main()

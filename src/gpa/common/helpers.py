@@ -1,10 +1,8 @@
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import torch
-import torch.nn.functional as F
 from gpa.common.constants import IS_PRICE
 from gpa.common.constants import IS_PRODUCT
-from gpa.common.objects import UndirectedGraph
 from torch_geometric.data import Batch
 
 
@@ -13,10 +11,25 @@ def min_max_normalize(x: torch.Tensor) -> torch.Tensor:
     return (x - x.min()) / (x.max() - x.min() + 1e-6)
 
 
+def edge_index_union(
+    edge_index_a: torch.Tensor, edge_index_b: torch.Tensor
+) -> torch.Tensor:
+    """Return an edge index containing all unique edges in `edge_index_a` and `edge_index_b`."""
+    set_a = set(map(tuple, edge_index_a.T.tolist()))
+    set_b = set(map(tuple, edge_index_b.T.tolist()))
+
+    if unioned_pairs := set_a.union(set_b):
+        union_tensor = torch.tensor(list(unioned_pairs)).T
+    else:
+        union_tensor = torch.empty((2, 0), dtype=edge_index_a.dtype)
+
+    return union_tensor
+
+
 def edge_index_diff(
     edge_index_a: torch.Tensor, edge_index_b: torch.Tensor
 ) -> torch.Tensor:
-    """Return the edge index containing only edges in `edge_index_a` that are not in `edge_index_b`."""
+    """Return an edge index containing only edges in `edge_index_a` that are not in `edge_index_b`."""
     set_a = set(map(tuple, edge_index_a.T.tolist()))
     set_b = set(map(tuple, edge_index_b.T.tolist()))
     diff_pairs = set_a - set_b
@@ -29,25 +42,29 @@ def edge_index_diff(
     return diff_tensor
 
 
-def build_graph_from_detections(
+def get_node_embeddings_from_detections(
     product_bboxes: dict[str, torch.Tensor],
     product_embeddings: dict[str, torch.Tensor],
     price_bboxes: dict[str, torch.Tensor],
     price_embeddings: dict[str, torch.Tensor],
-) -> UndirectedGraph:
-    """Build an undirected graph from the provided detections.
+) -> tuple[torch.Tensor, dict[str, int]]:
+    """Build a node embeddings matrix from the provided detections.
+
+    Currently, each node embedding is (cx, cy, w, h, visual_repr, is_product), where
+    visual_repr is (512,) and is_product is an indicator (0 or 1). This representation
+    can be further transformed for downstream use (e.g. filter to spatial information only).
 
     Args:
         product_bboxes (dict[str, torch.Tensor]): Mapping from product bbox IDs to their respective coordinates (xywhn format).
-        product_embeddings (dict[str, torch.Tensor]): Mapping from product bbox IDs to their respective visual embeddings.
+        product_embeddings (dict[str, torch.Tensor]): Mapping from product bbox IDs to their respective embeddings.
         price_bboxes (dict[str, torch.Tensor]): Mapping from price tag bbox IDs to their respective coordinates (xywhn format).
-        price_embeddings (dict[str, torch.Tensor]): Mapping from price tag bbox IDs to their respective visual embeddings.
+        price_embeddings (dict[str, torch.Tensor]): Mapping from price tag bbox IDs to their respective embeddings.
 
     Raises:
         ValueError: If any bbox coordinates are not normalized (values must be between 0 and 1).
 
     Returns:
-        UndirectedGraph: A graph representation of the provided detections.
+        tuple[torch.Tensor, dict[str, int]]: A tuple containing the node embeddings matrix and a map from each bbox ID to its corresponding row in the tensor.
     """
     if torch.any(torch.stack(list(product_bboxes.values())) > 1):
         raise ValueError("Product bbox coords must be normalized.")
@@ -61,6 +78,9 @@ def build_graph_from_detections(
     prod_bbox_ids, prod_bbox_tensors = tuple(map(list, zip(*product_bboxes.items())))
     price_bbox_ids, price_bbox_tensors = tuple(map(list, zip(*price_bboxes.items())))
     all_bboxes = torch.stack(prod_bbox_tensors + price_bbox_tensors, dim=0)
+    all_embeddings = torch.stack(
+        list(product_embeddings.values()) + list(price_embeddings.values()), dim=0
+    )
     indicator = torch.cat(
         [
             torch.full((n_prod,), IS_PRODUCT),
@@ -68,54 +88,13 @@ def build_graph_from_detections(
         ],
         dim=0,
     )
-    x = torch.cat([all_bboxes, indicator.view(-1, 1)], dim=1)
-
-    # Construct edge index connecting all nodes to all other nodes (undirected, no self loops).
-    node_indices = torch.arange(n_prod + n_price)
-    edge_index = torch.cartesian_prod(node_indices, node_indices).T
-    edge_index = edge_index[:, edge_index[0] != edge_index[1]]  # Delete self loops.
-
-    # Compute spatial proximity scores.
-    centroids = all_bboxes[:, :2]
-    centroid_dists = torch.cdist(centroids, centroids)
-    edge_spatial_proximity = 1 / (centroid_dists[edge_index[0], edge_index[1]] + 1e-6)
-    edge_spatial_proximity = min_max_normalize(edge_spatial_proximity)
-
-    # Compute visual proximity scores.
-    prod_embeddings = torch.stack(
-        [product_embeddings[id] for id in prod_bbox_ids], dim=0
-    )
-    normed_prod_embeddings = F.normalize(prod_embeddings, dim=1)
-    prod_cosine_similarities = normed_prod_embeddings @ normed_prod_embeddings.T
-    prod_visual_proximity = (1 + prod_cosine_similarities) / 2
-    edge_visual_proximity = torch.zeros_like(edge_spatial_proximity)
-    prod_prod_edges = (edge_index[0] < n_prod) & (edge_index[1] < n_prod)
-    edge_visual_proximity[prod_prod_edges] = prod_visual_proximity[
-        edge_index[0, prod_prod_edges], edge_index[1, prod_prod_edges]
-    ]
-    price_embeddings = torch.stack(
-        [price_embeddings[id] for id in price_bbox_ids], dim=0
-    )
-    normed_price_embeddings = F.normalize(price_embeddings, dim=1)
-    price_cosine_similarities = normed_price_embeddings @ normed_price_embeddings.T
-    price_visual_proximity = (1 + price_cosine_similarities) / 2
-    price_price_edges = (edge_index[0] >= n_prod) & (edge_index[1] >= n_prod)
-    edge_visual_proximity[price_price_edges] = price_visual_proximity[
-        edge_index[0, price_price_edges] - n_prod,
-        edge_index[1, price_price_edges] - n_prod,
-    ]
-
-    # Combine spatial / visual proximity scores into 2-d edge attributes.
-    edge_attr = torch.stack([edge_spatial_proximity, edge_visual_proximity], dim=1)
+    x = torch.cat([all_bboxes, all_embeddings, indicator.view(-1, 1)], dim=1)
 
     # Get a map that allows us to look up where a bounding box is in the node tensor.
     id_to_idx = {
         bbox_id: idx for idx, bbox_id in enumerate(prod_bbox_ids + price_bbox_ids)
     }
-
-    return UndirectedGraph(
-        id_to_idx=id_to_idx, x=x, edge_index=edge_index, edge_attr=edge_attr
-    )
+    return x, id_to_idx
 
 
 def plot_bboxes(
@@ -197,7 +176,7 @@ def connect_products_with_nearest_price_tag(
     product_indices: torch.LongTensor,
     price_indices: torch.LongTensor,
 ) -> torch.LongTensor:
-    """From the provided centroids, return an edge index connecting each product with the nearest price tag.
+    """From the provided centroids, return an undirected edge index connecting each product with the nearest price tag.
 
     Args:
         centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
@@ -212,13 +191,127 @@ def connect_products_with_nearest_price_tag(
     distances = torch.cdist(product_centroids, price_centroids, p=2)
     idx_of_nearest = torch.argmin(distances, dim=1)
     nearest_price_tensor = price_indices[idx_of_nearest]
-    return torch.stack([product_indices, nearest_price_tensor], dim=0)
+    edge_index = torch.stack([product_indices, nearest_price_tensor], dim=0).long()
+    return edge_index_union(edge_index, edge_index.flip(0))
+
+
+def connect_products_with_nearest_price_tag_below(
+    centroids: torch.Tensor,
+    product_indices: torch.LongTensor,
+    price_indices: torch.LongTensor,
+) -> torch.LongTensor:
+    """From the provided centroids, return an undirected edge index connecting each product with the nearest price tag below it (if one exists).
+
+    Args:
+        centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
+        product_indices (torch.LongTensor): Indices of product nodes.
+        price_indices (torch.LongTensor): Indices of price tag nodes.
+
+    Returns:
+        torch.LongTensor: A (2, E) undirected edge index connecting each product centroid with the nearest price tag below it (if one exists).
+    """
+    product_centroids = centroids[product_indices]
+    price_centroids = centroids[price_indices]
+
+    distances = torch.cdist(product_centroids, price_centroids, p=2)
+    product_y = product_centroids[:, 1].unsqueeze(1)
+    price_y = price_centroids[:, 1].unsqueeze(0)
+    # Recall: with bbox coordinates, the top of an image is y=0.
+    under_mask = price_y > product_y
+    distances[~under_mask] = float("inf")
+
+    idx_of_nearest = torch.argmin(distances, dim=1)
+    any_valid = torch.isfinite(distances).any(dim=1)
+
+    nearest_price_tensor = torch.full(
+        (len(product_indices),), -1, dtype=torch.long, device=product_centroids.device
+    )
+    nearest_price_tensor[any_valid] = price_indices[idx_of_nearest[any_valid]]
+
+    edge_index = torch.stack(
+        [product_indices[any_valid], nearest_price_tensor[any_valid]], dim=0
+    ).long()
+    return edge_index_union(edge_index, edge_index.flip(0))
+
+
+def connect_products_with_nearest_price_tag_per_group(
+    centroids: torch.Tensor,
+    product_indices: torch.LongTensor,
+    price_indices: torch.LongTensor,
+    prod_prod_edge_index: torch.LongTensor,
+) -> torch.LongTensor:
+    """From the provided centroids, return an undirected edge index connecting each product with the price tag with the smallest average distance to all nodes connected to that product.
+
+    We also enforce that price tags must sit below their corresponding products.
+
+    Args:
+        centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
+        product_indices (torch.LongTensor): Indices of product nodes.
+        price_indices (torch.LongTensor): Indices of price tag nodes.
+        prod_prod_edge_index (torch.LongTensor): A (2, E) edge index indicating which products are connected (they share a UPC, packaging type, etc.)
+
+    Returns:
+        torch.LongTensor: A (2, E) undirected edge index connecting each product centroid with a price tag according to the strategy outlined above.
+    """
+    subgraph_labels = parse_into_subgraphs(
+        prod_prod_edge_index, num_nodes=len(centroids)
+    )
+
+    price_centroids = centroids[price_indices]
+    product_centroids = centroids[product_indices]
+
+    product_group_labels = subgraph_labels[product_indices]
+    unique_group_labels = product_group_labels.unique()
+    closest_price_per_group = {}
+
+    for group_label in unique_group_labels.tolist():
+        in_group_mask = product_group_labels == group_label
+        group_indices = torch.nonzero(in_group_mask, as_tuple=True)[0]
+        group_centroids = product_centroids[group_indices]
+
+        # Recall: with bbox coordinates, the top of an image is y=0.
+        highest_group_y = group_centroids[:, 1].min()
+        valid_price_mask = price_centroids[:, 1] >= highest_group_y
+        valid_price_centroids = price_centroids[valid_price_mask]
+        valid_price_indices = price_indices[valid_price_mask]
+
+        if valid_price_centroids.size(0) == 0:
+            continue
+        else:
+            distances = torch.cdist(group_centroids, valid_price_centroids, p=2)
+            mean_distances = distances.mean(dim=0)
+            closest_idx = torch.argmin(mean_distances)
+            closest_price_idx = valid_price_indices[closest_idx].item()
+            closest_price_per_group[group_label] = closest_price_idx
+
+    valid_mask = torch.tensor(
+        [
+            group_label.item() in closest_price_per_group
+            for group_label in product_group_labels
+        ],
+        device=product_indices.device,
+    )
+    valid_product_indices = product_indices[valid_mask]
+    valid_group_labels = product_group_labels[valid_mask]
+    matched_price_indices = torch.tensor(
+        [
+            closest_price_per_group[group_label.item()]
+            for group_label in valid_group_labels
+        ],
+        device=product_indices.device,
+    )
+
+    edge_index = torch.stack(
+        [valid_product_indices, matched_price_indices], dim=0
+    ).long()
+    return edge_index_union(edge_index, edge_index.flip(0))
 
 
 def get_candidate_edges(
     batch: Batch, balanced: bool = True
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Given a batch of graphs (represented as a mega-graph with a block diagonal adjacency matrix), return a set of candidate edges (of which some are fake and some are present in the ground truth labels).
+    """Given a batch of graphs (represented as a mega-graph with a block diagonal adjacency matrix),
+    return a set of candidate edges, of which some are fake and some are present in the ground truth.
 
     Args:
         batch (Batch): A batch of data from a PriceAttributionDataset.
@@ -236,49 +329,59 @@ def get_candidate_edges(
         current_scene_indices = torch.where(batch.batch == scene_idx)[0]
 
         # From the saved data, retrieve the ground-truth prod-price edges in the current scene (to teach the model what to look for).
-        src_in_scene = torch.isin(
+        gt_src_in_scene = torch.isin(
             batch.gt_prod_price_edge_index[0], current_scene_indices
         )
-        dst_in_scene = torch.isin(
+        gt_dst_in_scene = torch.isin(
             batch.gt_prod_price_edge_index[1], current_scene_indices
         )
         real_edges_in_scene: torch.Tensor = batch.gt_prod_price_edge_index[
-            :, src_in_scene & dst_in_scene
+            :, gt_src_in_scene & gt_dst_in_scene
         ]
+        # Remove edges that are already present (trivial positives).
+        current_src_in_scene = torch.isin(batch.edge_index[0], current_scene_indices)
+        current_dst_in_scene = torch.isin(batch.edge_index[1], current_scene_indices)
+        real_edges_in_scene_not_already_present = edge_index_diff(
+            real_edges_in_scene,
+            batch.edge_index[:, current_src_in_scene & current_dst_in_scene],
+        )
 
         # Generate fake prod-price edges for the current scene (to teach the model what *not* to look for.)
-        centroids = batch.x[current_scene_indices, :2]
-        candidate_edges = connect_products_with_nearest_price_tag(
-            centroids=centroids,
-            product_indices=torch.where(batch.x[current_scene_indices, -1] == 1)[0],
-            price_indices=torch.where(batch.x[current_scene_indices, -1] == 0)[0],
-        )
+        product_indices = torch.where(batch.x[current_scene_indices, -1] == 1)[0]
+        price_indices = torch.where(batch.x[current_scene_indices, -1] == 0)[0]
+        candidate_edges = torch.cartesian_prod(product_indices, price_indices).T
         candidate_edges = torch.stack(
             [
+                # We have to shift the indices to the global (mega-graph) frame of reference.
                 current_scene_indices[candidate_edges[0]],
                 current_scene_indices[candidate_edges[1]],
             ],
             dim=0,
         )
+        # Make undirected (just in case the model is not symmetric).
         candidate_edges = torch.cat([candidate_edges, candidate_edges.flip(0)], dim=1)
         fake_edges_in_scene = edge_index_diff(candidate_edges, real_edges_in_scene)
 
         if balanced:
-            n_positive = real_edges_in_scene.shape[1]
+            n_positive = real_edges_in_scene_not_already_present.shape[1]
             n_negative = fake_edges_in_scene.shape[1]
             if n_positive == 0 or n_negative == 0:
                 continue
             n_samples = min(n_positive, n_negative)
-            real_edges_in_scene = real_edges_in_scene[
-                :,
-                torch.multinomial(torch.ones(n_positive), n_samples, replacement=False),
-            ]
+            real_edges_in_scene_not_already_present = (
+                real_edges_in_scene_not_already_present[
+                    :,
+                    torch.multinomial(
+                        torch.ones(n_positive), n_samples, replacement=False
+                    ),
+                ]
+            )
             fake_edges_in_scene = fake_edges_in_scene[
                 :,
                 torch.multinomial(torch.ones(n_negative), n_samples, replacement=False),
             ]
 
-        real_edges.append(real_edges_in_scene)
+        real_edges.append(real_edges_in_scene_not_already_present)
         fake_edges.append(fake_edges_in_scene)
 
     # Form a combined edge index for positive and negative edges across all scenes in the batch.
