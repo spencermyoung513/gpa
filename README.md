@@ -40,7 +40,7 @@ Use the [Metrics Viewer](notebooks/metrics_viewer.ipynb) to view loss curves and
 Models can be evaluated via the [Evaluation Script](src/gpa/evaluation/evaluate_attributor.py). To run the evaluation script, use the following command:
 
 ```bash
-uv run eval --chkp path/to/model/checkpoint.ckpt
+uv run eval --ckpt path/to/model/checkpoint.ckpt
 ```
 
 This script will follow the logging settings specified in the config (WandB vs. local). It will also save evaluation metrics to a YAML file in the log directory.
