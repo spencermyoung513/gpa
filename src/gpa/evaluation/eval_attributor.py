@@ -1,11 +1,14 @@
 import argparse
 from pathlib import Path
+from pprint import pprint
 
 import lightning as L
 import yaml
 from gpa.configs import TrainingConfig
 from gpa.datamodules import PriceAttributionDataModule
 from gpa.models.attributors import LightningPriceAttributor
+
+import wandb
 
 
 def evaluate(ckpt_path: Path):
@@ -29,10 +32,26 @@ def evaluate(ckpt_path: Path):
         initial_connection_scheme=config.model.initial_connection_scheme,
     )
     datamodule.setup("")
-    metrics = trainer.validate(model, datamodule.inference_dataloader())[0]
+
+    if config.logging.use_wandb:
+        wandb.init(
+            project=config.logging.project_name,
+            name=config.run_name,
+            tags=["EVAL"],
+        )
+
+    metrics = trainer.validate(model, datamodule.inference_dataloader(), verbose=False)[
+        0
+    ]
     results_path = config_path.parent / "eval_metrics.yaml"
     with open(results_path, "w") as f:
         yaml.dump(metrics, f)
+
+    if config.logging.use_wandb:
+        wandb.log(metrics)
+        wandb.finish()
+    else:
+        pprint(metrics)
 
 
 def main():

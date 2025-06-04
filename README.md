@@ -31,12 +31,21 @@ To train a model, first fill out a config (using the [example config](src/gpa/tr
 uv run train --config path/to/your/config.yaml
 ```
 
-The training script will save trained weights (both the best in terms of validation loss and the most recent copy) to the checkpoint directory specified in the config, and metrics will be saved to the log directory indicated in the config. Use the [Metrics Viewer](notebooks/metrics_viewer.ipynb) to view loss curves from a training run (and other metrics).
+The training script will save trained weights (both the best in terms of validation loss and the most recent copy) to the checkpoint directory specified in the config, and metrics will be logged in Weights and Biases (if indicated in the config) or locally (to the log directory specified in the config). The train config will also be saved in this log directory.
+
+Use the [Metrics Viewer](notebooks/metrics_viewer.ipynb) to view loss curves and other metrics from a (locally logged) training run.
 
 ## Evaluating a Model
 
-To get a qualitative sense of how well a model performs for price attribution, use the [Predictions Viewer](notebooks/predictions_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price attribution predictions (and comparing them to the ground truth).
+Models can be evaluated via the [Evaluation Script](src/gpa/evaluation/evaluate_attributor.py). To run the evaluation script, use the following command:
 
+```bash
+uv run eval --chkp path/to/model/checkpoint.ckpt
+```
+
+This script will follow the logging settings specified in the config (WandB vs. local). It will also save evaluation metrics to a YAML file in the log directory.
+
+To get a qualitative sense of how well a model performs for price attribution, use the [Predictions Viewer](notebooks/predictions_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price attribution predictions (and comparing them to the ground truth).
 
 ## Development
 

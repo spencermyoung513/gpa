@@ -21,5 +21,8 @@ model:
     strategy: hadamard
     layer_widths: [128, 64]
 dataset_dir: data/price-graphs-i
-log_dir: logs
-chkp_dir: chkp
+logging:
+  use_wandb: True
+  project_name: price-attribution
+  log_dir: logs
+  chkp_dir: chkp

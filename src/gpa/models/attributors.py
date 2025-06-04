@@ -196,7 +196,7 @@ class LightningPriceAttributor(L.LightningModule):
                 recall.update(probs, targets)
                 f1.update(probs, targets)
         self.log(
-            f"{step_type}_loss",
+            f"{step_type}/loss",
             loss,
             on_epoch=True,
             on_step=False,
@@ -210,24 +210,24 @@ class LightningPriceAttributor(L.LightningModule):
         recall = self.val_recall.compute()
         f1 = self.val_f1.compute()
 
-        self.log("val_precision_mean", precision["mean"])
-        self.log("val_precision_std", precision["std"])
-        self.log("val_recall_mean", recall["mean"])
-        self.log("val_recall_std", recall["std"])
-        self.log("val_f1_mean", f1["mean"])
-        self.log("val_f1_std", f1["std"])
+        self.log("val/precision_mean", precision["mean"])
+        self.log("val/precision_std", precision["std"])
+        self.log("val/recall_mean", recall["mean"])
+        self.log("val/recall_std", recall["std"])
+        self.log("val/f1_mean", f1["mean"])
+        self.log("val/f1_std", f1["std"])
 
     def on_train_epoch_end(self):
         precision = self.trn_precision.compute()
         recall = self.trn_recall.compute()
         f1 = self.trn_f1.compute()
 
-        self.log("train_precision_mean", precision["mean"])
-        self.log("train_precision_std", precision["std"])
-        self.log("train_recall_mean", recall["mean"])
-        self.log("train_recall_std", recall["std"])
-        self.log("train_f1_mean", f1["mean"])
-        self.log("train_f1_std", f1["std"])
+        self.log("train/precision_mean", precision["mean"])
+        self.log("train/precision_std", precision["std"])
+        self.log("train/recall_mean", recall["mean"])
+        self.log("train/recall_std", recall["std"])
+        self.log("train/f1_mean", f1["mean"])
+        self.log("train/f1_std", f1["std"])
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

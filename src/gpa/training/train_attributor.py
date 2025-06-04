@@ -8,30 +8,39 @@ from gpa.datamodules import PriceAttributionDataModule
 from gpa.models.attributors import LightningPriceAttributor
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
+from lightning.pytorch.loggers import WandbLogger
 
 
 def train(config: TrainingConfig):
-    logger = CSVLogger(
-        save_dir=config.log_dir,
-        name=config.run_name,
-    )
-    log_dir = Path(logger.log_dir)
+    if config.logging.use_wandb:
+        logger = WandbLogger(
+            project=config.logging.project_name,
+            name=config.run_name,
+            tags=["TRAIN"],
+        )
+    else:
+        logger = CSVLogger(
+            save_dir=config.logging.log_dir,
+            name=config.run_name,
+            version="",
+        )
+    log_dir = config.logging.log_dir / config.run_name
     log_dir.mkdir(parents=True, exist_ok=True)
-    version_dir = log_dir.stem
     with open(log_dir / "config.yaml", "w") as f:
         yaml.dump(config.model_dump(mode="json"), f)
 
     best_ckpt_callback = ModelCheckpoint(
-        dirpath=config.chkp_dir / config.run_name / version_dir,
+        dirpath=config.logging.chkp_dir / config.run_name,
         filename="best_loss",
-        monitor="val_loss",
+        monitor="val/loss",
         mode="min",
         save_top_k=1,
     )
     last_ckpt_callback = ModelCheckpoint(
-        dirpath=config.chkp_dir / config.run_name / version_dir,
+        dirpath=config.logging.chkp_dir / config.run_name,
         filename="last",
         save_last=True,
+        enable_version_counter=False,
     )
     trainer = L.Trainer(
         accelerator=config.accelerator.value,

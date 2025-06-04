@@ -1,22 +1,25 @@
-run_name: test_run
-num_epochs: 2
-batch_size: 2
+run_name: test-run
+num_epochs: 20
+batch_size: 8
 lr: 3e-4
 weight_decay: 1e-5
 num_workers: 0
 accelerator: cpu
-a: 1.0
-b: 2.0
 balanced_edge_sampling: True
 model:
+  use_visual_info: False
+  aggregate_by_upc: True
+  use_spatially_invariant_coords: True
   encoder_type: transformer
   encoder_settings:
-    node_hidden_dim: 32
+    node_hidden_dim: 128
     num_layers: 2
   link_predictor_type: mlp
   link_predictor_settings:
     strategy: hadamard
-    layer_widths: [32, 16]
+    layer_widths: [128, 64]
 dataset_dir: data/price-graphs-i
-log_dir: logs
-chkp_dir: chkp
+logging:
+  use_wandb: False
+  log_dir: logs
+  chkp_dir: chkp

@@ -24,6 +24,7 @@ dependencies = [
     "torch>=2.7.0",
     "torch-geometric>=2.6.1",
     "torchvision>=0.22.0",
+    "wandb>=0.20.0",
 ]
 
 [project.scripts]

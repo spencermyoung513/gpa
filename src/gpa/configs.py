@@ -9,6 +9,13 @@ from pydantic import Field
 from pydantic import model_validator
 
 
+class LoggingConfig(BaseModel):
+    use_wandb: bool = False
+    project_name: str | None = None
+    log_dir: Path = Path("logs")
+    chkp_dir: Path = Path("chkp")
+
+
 class ModelConfig(BaseModel):
     use_visual_info: bool = False
     aggregate_by_upc: bool = False
@@ -22,6 +29,8 @@ class ModelConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     run_name: str
+    model: ModelConfig
+    logging: LoggingConfig
     num_epochs: int
     batch_size: int = 1
     num_workers: int = 0
@@ -31,10 +40,7 @@ class TrainingConfig(BaseModel):
     a: float | None = Field(default=None, gt=0.0)
     b: float | None = Field(default=None, gt=0.0)
     balanced_edge_sampling: bool = True
-    model: ModelConfig
     dataset_dir: Path
-    log_dir: Path = Path("logs")
-    chkp_dir: Path = Path("chkp")
 
     @model_validator(mode="after")
     def ensure_a_and_b_are_both_specified_or_neither_is(self):
