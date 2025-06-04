@@ -8,13 +8,12 @@ import open_clip
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from open_clip import CLIP
-from PIL import Image
-from tqdm import tqdm
-
 from gpa.common.objects import GraphComponents
 from gpa.common.objects import ProductPriceGroup
 from gpa.common.objects import UPCGroup
+from open_clip import CLIP
+from PIL import Image
+from tqdm import tqdm
 
 
 def csv_array_str_to_list(x: str) -> list[str]:
@@ -73,10 +72,14 @@ def get_bbox_and_embeddings_tensors(
     ).to(torch.float32)
 
     embeddings = []
-    for i in tqdm(range(0, len(xywh), batch_size), desc="Generating embeddings...", leave=False):
+    for i in tqdm(
+        range(0, len(xywh), batch_size), desc="Generating embeddings...", leave=False
+    ):
         batch_bboxes = xywh[i : i + batch_size]
         batch_crops = [crop_from_xywhn(image, bbox) for bbox in batch_bboxes]
-        batch_tensors = torch.stack([preprocess(crop) for crop in batch_crops], dim=0).to(device)
+        batch_tensors = torch.stack(
+            [preprocess(crop) for crop in batch_crops], dim=0
+        ).to(device)
         batch_embeddings = embedder.encode_image(batch_tensors)
         batch_embeddings = F.normalize(batch_embeddings, dim=1)
         embeddings.append(batch_embeddings.cpu())
@@ -164,8 +167,12 @@ def form_graph_components(
         prod_price_groups.append(
             ProductPriceGroup(
                 group_id=group_id,
-                product_bbox_ids=[x for x in prod_bbox_ids_in_group if x in prod_bbox_ids],
-                price_bbox_ids=[x for x in price_bbox_ids_in_group if x in price_bbox_ids],
+                product_bbox_ids=[
+                    x for x in prod_bbox_ids_in_group if x in prod_bbox_ids
+                ],
+                price_bbox_ids=[
+                    x for x in price_bbox_ids_in_group if x in price_bbox_ids
+                ],
             )
         )
 
@@ -184,10 +191,14 @@ def form_graph_components(
 def main(
     dataset_dir: Path,
     output_dir: Path,
-    train_pct: float = 0.9,
+    train_pct: float = 0.8,
+    val_pct: float = 0.1,
+    test_pct: float = 0.1,
     device: torch.device = torch.device("cpu"),
     limit: int | None = None,
 ):
+    assert train_pct + val_pct + test_pct == 1
+
     # Each dataframe is indexed by attribution set ID (indicates a single "price scene").
     products_df = pd.read_csv(
         dataset_dir / "product_boxes.csv", index_col=0, dtype={"ml_label_name": str}
@@ -211,8 +222,10 @@ def main(
     random.shuffle(scene_ids)
     num_scenes = len(scene_ids)
     train_cutoff = int(train_pct * num_scenes)
+    val_cutoff = int((train_pct + val_pct) * num_scenes)
     trn_scene_ids = scene_ids[:train_cutoff]
-    val_scene_ids = scene_ids[train_cutoff:]
+    val_scene_ids = scene_ids[train_cutoff:val_cutoff]
+    test_scene_ids = scene_ids[val_cutoff:]
 
     embedder, _, preprocess = open_clip.create_model_and_transforms(
         model_name="ViT-B-32",
@@ -235,7 +248,9 @@ def main(
         trn_components.append(graph_components.model_dump())
 
     val_components = []
-    for scene_id in tqdm(val_scene_ids, desc="Parsing validation scenes into graphs..."):
+    for scene_id in tqdm(
+        val_scene_ids, desc="Parsing validation scenes into graphs..."
+    ):
         graph_components = form_graph_components(
             scene_id=scene_id,
             dataset_dir=dataset_dir,
@@ -248,33 +263,74 @@ def main(
         )
         val_components.append(graph_components.model_dump())
 
+    test_components = []
+    for scene_id in tqdm(test_scene_ids, desc="Parsing test scenes into graphs..."):
+        graph_components = form_graph_components(
+            scene_id=scene_id,
+            dataset_dir=dataset_dir,
+            products_df=products_df,
+            price_tags_df=price_tags_df,
+            groups_df=groups_df,
+            embedder=embedder,
+            preprocess=preprocess,
+            device=device,
+        )
+        test_components.append(graph_components.model_dump())
+
     trn_graph_dir = output_dir / "train" / "raw"
     val_graph_dir = output_dir / "val" / "raw"
-    for d in trn_graph_dir, val_graph_dir:
+    test_graph_dir = output_dir / "test" / "raw"
+    for d in trn_graph_dir, val_graph_dir, test_graph_dir:
         if not d.exists():
             d.mkdir(parents=True)
     torch.save(trn_components, trn_graph_dir / "graph_components.pt")
     torch.save(val_components, val_graph_dir / "graph_components.pt")
+    torch.save(test_components, test_graph_dir / "graph_components.pt")
 
     products_df_trn: pd.DataFrame = products_df.loc[trn_scene_ids]
     products_df_val: pd.DataFrame = products_df.loc[val_scene_ids]
+    products_df_test: pd.DataFrame = products_df.loc[test_scene_ids]
     price_tags_df_trn: pd.DataFrame = price_tags_df.loc[trn_scene_ids]
     price_tags_df_val: pd.DataFrame = price_tags_df.loc[val_scene_ids]
+    price_tags_df_test: pd.DataFrame = price_tags_df.loc[test_scene_ids]
 
-    for df in products_df_trn, products_df_val, price_tags_df_trn, price_tags_df_val:
+    for df in (
+        products_df_trn,
+        products_df_val,
+        products_df_test,
+        price_tags_df_trn,
+        price_tags_df_val,
+        price_tags_df_test,
+    ):
         df.drop(columns=["width", "height", "center_x", "center_y"], inplace=True)
 
-    products_df_trn.reset_index().to_csv(trn_graph_dir / "product_boxes.csv", index=False)
-    products_df_val.reset_index().to_csv(val_graph_dir / "product_boxes.csv", index=False)
-    price_tags_df_trn.reset_index().to_csv(trn_graph_dir / "price_boxes.csv", index=False)
-    price_tags_df_val.reset_index().to_csv(val_graph_dir / "price_boxes.csv", index=False)
+    products_df_trn.reset_index().to_csv(
+        trn_graph_dir / "product_boxes.csv", index=False
+    )
+    products_df_val.reset_index().to_csv(
+        val_graph_dir / "product_boxes.csv", index=False
+    )
+    products_df_test.reset_index().to_csv(
+        test_graph_dir / "product_boxes.csv", index=False
+    )
+    price_tags_df_trn.reset_index().to_csv(
+        trn_graph_dir / "price_boxes.csv", index=False
+    )
+    price_tags_df_val.reset_index().to_csv(
+        val_graph_dir / "price_boxes.csv", index=False
+    )
+    price_tags_df_test.reset_index().to_csv(
+        test_graph_dir / "price_boxes.csv", index=False
+    )
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--dataset-dir", type=Path)
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--train-pct", type=float, default=0.9)
+    parser.add_argument("--train-pct", type=float, default=0.8)
+    parser.add_argument("--val-pct", type=float, default=0.1)
+    parser.add_argument("--test-pct", type=float, default=0.1)
     parser.add_argument("--device", choices=["cpu", "mps", "cuda"], default="cpu")
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
@@ -282,6 +338,8 @@ if __name__ == "__main__":
         dataset_dir=args.dataset_dir,
         output_dir=args.output_dir,
         train_pct=args.train_pct,
+        val_pct=args.val_pct,
+        test_pct=args.test_pct,
         device=torch.device(args.device),
         limit=args.limit,
     )

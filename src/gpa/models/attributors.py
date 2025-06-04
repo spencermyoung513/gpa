@@ -116,6 +116,9 @@ class LightningPriceAttributor(L.LightningModule):
         self.val_precision = BootStrapper(BinaryPrecision())
         self.val_recall = BootStrapper(BinaryRecall())
         self.val_f1 = BootStrapper(BinaryF1Score())
+        self.test_precision = BootStrapper(BinaryPrecision())
+        self.test_recall = BootStrapper(BinaryRecall())
+        self.test_f1 = BootStrapper(BinaryF1Score())
 
     def forward(
         self,
@@ -153,12 +156,17 @@ class LightningPriceAttributor(L.LightningModule):
     def validation_step(self, batch: Batch, batch_idx: int):
         return self._step(batch, step_type="val")
 
-    def _step(self, batch: Batch, step_type: Literal["train", "val"]) -> torch.Tensor:
+    def test_step(self, batch: Batch, batch_idx: int):
+        return self._step(batch, step_type="test")
+
+    def _step(
+        self, batch: Batch, step_type: Literal["train", "val", "test"]
+    ) -> torch.Tensor:
         """Handle all the necessary logic for a single training / validation forward pass.
 
         Args:
             batch (Batch): A batch of data from a PriceAttributionDataset.
-            step_type (Literal["train", "val"]: Specifies which type of step we are taking.
+            step_type (Literal["train", "val", "test"]: Specifies which type of step we are taking.
 
         Returns:
             torch.Tensor: The loss accumulated during the forward pass.
@@ -171,14 +179,18 @@ class LightningPriceAttributor(L.LightningModule):
             precision = self.val_precision
             recall = self.val_recall
             f1 = self.val_f1
+        elif step_type == "test":
+            precision = self.test_precision
+            recall = self.test_recall
+            f1 = self.test_f1
         else:
             raise NotImplementedError(
                 "Unsupported step_type passed to PriceAttributor._step"
             )
         real_edges, fake_edges = get_candidate_edges(
-            batch, balanced=self.balanced_edge_sampling
+            batch, balanced=self.balanced_edge_sampling and step_type == "train"
         )
-        loss = torch.tensor(0.0, device=self.device, requires_grad=True)
+        loss = torch.tensor(0.0, device=self.device, requires_grad=step_type == "train")
         for edges, label in [(real_edges, 1.0), (fake_edges, 0.0)]:
             if edges.size(1) > 0:
                 logits = self(
@@ -205,11 +217,21 @@ class LightningPriceAttributor(L.LightningModule):
         )
         return loss
 
+    def on_train_epoch_end(self):
+        precision = self.trn_precision.compute()
+        recall = self.trn_recall.compute()
+        f1 = self.trn_f1.compute()
+        self.log("train/precision_mean", precision["mean"])
+        self.log("train/precision_std", precision["std"])
+        self.log("train/recall_mean", recall["mean"])
+        self.log("train/recall_std", recall["std"])
+        self.log("train/f1_mean", f1["mean"])
+        self.log("train/f1_std", f1["std"])
+
     def on_validation_epoch_end(self):
         precision = self.val_precision.compute()
         recall = self.val_recall.compute()
         f1 = self.val_f1.compute()
-
         self.log("val/precision_mean", precision["mean"])
         self.log("val/precision_std", precision["std"])
         self.log("val/recall_mean", recall["mean"])
@@ -217,17 +239,16 @@ class LightningPriceAttributor(L.LightningModule):
         self.log("val/f1_mean", f1["mean"])
         self.log("val/f1_std", f1["std"])
 
-    def on_train_epoch_end(self):
-        precision = self.trn_precision.compute()
-        recall = self.trn_recall.compute()
-        f1 = self.trn_f1.compute()
-
-        self.log("train/precision_mean", precision["mean"])
-        self.log("train/precision_std", precision["std"])
-        self.log("train/recall_mean", recall["mean"])
-        self.log("train/recall_std", recall["std"])
-        self.log("train/f1_mean", f1["mean"])
-        self.log("train/f1_std", f1["std"])
+    def on_test_epoch_end(self):
+        precision = self.test_precision.compute()
+        recall = self.test_recall.compute()
+        f1 = self.test_f1.compute()
+        self.log("test/precision_mean", precision["mean"])
+        self.log("test/precision_std", precision["std"])
+        self.log("test/recall_mean", recall["mean"])
+        self.log("test/recall_std", recall["std"])
+        self.log("test/f1_mean", f1["mean"])
+        self.log("test/f1_std", f1["std"])
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

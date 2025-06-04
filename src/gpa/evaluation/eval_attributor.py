@@ -40,9 +40,11 @@ def evaluate(ckpt_path: Path):
             tags=["EVAL"],
         )
 
-    metrics = trainer.validate(model, datamodule.inference_dataloader(), verbose=False)[
-        0
-    ]
+    metrics = trainer.test(
+        model=model,
+        datamodule=datamodule,
+        verbose=False,
+    )[0]
     results_path = config_path.parent / "eval_metrics.yaml"
     with open(results_path, "w") as f:
         yaml.dump(metrics, f)

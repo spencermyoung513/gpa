@@ -52,7 +52,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
     def setup(self, stage: str):
         train_transforms = self._get_train_transforms()
         val_transforms = self._get_val_transforms()
-        inference_transforms = self._get_inference_transforms()
+        test_transforms = self._get_test_transforms()
         self.train = PriceAttributionDataset(
             root=self.data_dir / "train",
             transform=train_transforms,
@@ -61,9 +61,9 @@ class PriceAttributionDataModule(L.LightningDataModule):
             root=self.data_dir / "val",
             transform=val_transforms,
         )
-        self.inference = PriceAttributionDataset(
-            root=self.data_dir / "val",
-            transform=inference_transforms,
+        self.test = PriceAttributionDataset(
+            root=self.data_dir / "test",
+            transform=test_transforms,
         )
 
     def train_dataloader(self):
@@ -84,9 +84,9 @@ class PriceAttributionDataModule(L.LightningDataModule):
             shuffle=False,
         )
 
-    def inference_dataloader(self):
+    def test_dataloader(self):
         return DataLoader(
-            dataset=self.inference,
+            dataset=self.test,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
@@ -123,7 +123,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
             transforms.append(HeuristicallyConnectGraph(self.initial_connection_scheme))
         return Compose(transforms)
 
-    def _get_inference_transforms(self) -> Compose:
+    def _get_test_transforms(self) -> Compose:
         transforms = []
         if self.use_spatially_invariant_coords:
             transforms.append(MakeBoundingBoxTranslationInvariant())
