@@ -186,10 +186,10 @@ class LightningPriceAttributor(L.LightningModule):
                     edge_index=batch.edge_index,
                     src=edges[0],
                     dst=edges[1],
-                    cluster_assignment=batch.upc_clusters,
+                    cluster_assignment=batch.get("upc_clusters"),
                 )
                 targets = torch.full_like(logits, fill_value=label)
-                loss += F.binary_cross_entropy_with_logits(logits, targets)
+                loss = loss + F.binary_cross_entropy_with_logits(logits, targets)
 
                 probs = torch.sigmoid(logits)
                 precision.update(probs, targets)

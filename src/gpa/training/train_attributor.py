@@ -42,7 +42,6 @@ def train(config: TrainingConfig):
         enable_model_summary=False,
     )
     model = LightningPriceAttributor(
-        use_visual_info=config.model.use_visual_info,
         encoder_type=config.model.encoder_type,
         encoder_settings={
             **config.model.encoder_settings,
