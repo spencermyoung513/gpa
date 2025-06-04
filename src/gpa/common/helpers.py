@@ -50,6 +50,10 @@ def get_node_embeddings_from_detections(
 ) -> tuple[torch.Tensor, dict[str, int]]:
     """Build a node embeddings matrix from the provided detections.
 
+    Currently, each node embedding is (cx, cy, w, h, visual_repr, is_product), where
+    visual_repr is (512,) and is_product is an indicator (0 or 1). This representation
+    can be further transformed for downstream use (e.g. filter to spatial information only).
+
     Args:
         product_bboxes (dict[str, torch.Tensor]): Mapping from product bbox IDs to their respective coordinates (xywhn format).
         product_embeddings (dict[str, torch.Tensor]): Mapping from product bbox IDs to their respective embeddings.
@@ -172,7 +176,7 @@ def connect_products_with_nearest_price_tag(
     product_indices: torch.LongTensor,
     price_indices: torch.LongTensor,
 ) -> torch.LongTensor:
-    """From the provided centroids, return an edge index connecting each product with the nearest price tag.
+    """From the provided centroids, return an undirected edge index connecting each product with the nearest price tag.
 
     Args:
         centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
@@ -187,7 +191,120 @@ def connect_products_with_nearest_price_tag(
     distances = torch.cdist(product_centroids, price_centroids, p=2)
     idx_of_nearest = torch.argmin(distances, dim=1)
     nearest_price_tensor = price_indices[idx_of_nearest]
-    return torch.stack([product_indices, nearest_price_tensor], dim=0)
+    edge_index = torch.stack([product_indices, nearest_price_tensor], dim=0).long()
+    return edge_index_union(edge_index, edge_index.flip(0))
+
+
+def connect_products_with_nearest_price_tag_below(
+    centroids: torch.Tensor,
+    product_indices: torch.LongTensor,
+    price_indices: torch.LongTensor,
+) -> torch.LongTensor:
+    """From the provided centroids, return an undirected edge index connecting each product with the nearest price tag below it (if one exists).
+
+    Args:
+        centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
+        product_indices (torch.LongTensor): Indices of product nodes.
+        price_indices (torch.LongTensor): Indices of price tag nodes.
+
+    Returns:
+        torch.LongTensor: A (2, E) undirected edge index connecting each product centroid with the nearest price tag below it (if one exists).
+    """
+    product_centroids = centroids[product_indices]
+    price_centroids = centroids[price_indices]
+
+    distances = torch.cdist(product_centroids, price_centroids, p=2)
+    product_y = product_centroids[:, 1].unsqueeze(1)
+    price_y = price_centroids[:, 1].unsqueeze(0)
+    # Recall: with bbox coordinates, the top of an image is y=0.
+    under_mask = price_y > product_y
+    distances[~under_mask] = float("inf")
+
+    idx_of_nearest = torch.argmin(distances, dim=1)
+    any_valid = torch.isfinite(distances).any(dim=1)
+
+    nearest_price_tensor = torch.full(
+        (len(product_indices),), -1, dtype=torch.long, device=product_centroids.device
+    )
+    nearest_price_tensor[any_valid] = price_indices[idx_of_nearest[any_valid]]
+
+    edge_index = torch.stack(
+        [product_indices[any_valid], nearest_price_tensor[any_valid]], dim=0
+    ).long()
+    return edge_index_union(edge_index, edge_index.flip(0))
+
+
+def connect_products_with_nearest_price_tag_per_group(
+    centroids: torch.Tensor,
+    product_indices: torch.LongTensor,
+    price_indices: torch.LongTensor,
+    prod_prod_edge_index: torch.LongTensor,
+) -> torch.LongTensor:
+    """From the provided centroids, return an undirected edge index connecting each product with the price tag with the smallest average distance to all nodes connected to that product.
+
+    We also enforce that price tags must sit below their corresponding products.
+
+    Args:
+        centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
+        product_indices (torch.LongTensor): Indices of product nodes.
+        price_indices (torch.LongTensor): Indices of price tag nodes.
+        prod_prod_edge_index (torch.LongTensor): A (2, E) edge index indicating which products are connected (they share a UPC, packaging type, etc.)
+
+    Returns:
+        torch.LongTensor: A (2, E) undirected edge index connecting each product centroid with a price tag according to the strategy outlined above.
+    """
+    subgraph_labels = parse_into_subgraphs(
+        prod_prod_edge_index, num_nodes=len(centroids)
+    )
+
+    price_centroids = centroids[price_indices]
+    product_centroids = centroids[product_indices]
+
+    product_group_labels = subgraph_labels[product_indices]
+    unique_group_labels = product_group_labels.unique()
+    closest_price_per_group = {}
+
+    for group_label in unique_group_labels.tolist():
+        in_group_mask = product_group_labels == group_label
+        group_indices = torch.nonzero(in_group_mask, as_tuple=True)[0]
+        group_centroids = product_centroids[group_indices]
+
+        # Recall: with bbox coordinates, the top of an image is y=0.
+        highest_group_y = group_centroids[:, 1].min()
+        valid_price_mask = price_centroids[:, 1] >= highest_group_y
+        valid_price_centroids = price_centroids[valid_price_mask]
+        valid_price_indices = price_indices[valid_price_mask]
+
+        if valid_price_centroids.size(0) == 0:
+            continue
+        else:
+            distances = torch.cdist(group_centroids, valid_price_centroids, p=2)
+            mean_distances = distances.mean(dim=0)
+            closest_idx = torch.argmin(mean_distances)
+            closest_price_idx = valid_price_indices[closest_idx].item()
+            closest_price_per_group[group_label] = closest_price_idx
+
+    valid_mask = torch.tensor(
+        [
+            group_label.item() in closest_price_per_group
+            for group_label in product_group_labels
+        ],
+        device=product_indices.device,
+    )
+    valid_product_indices = product_indices[valid_mask]
+    valid_group_labels = product_group_labels[valid_mask]
+    matched_price_indices = torch.tensor(
+        [
+            closest_price_per_group[group_label.item()]
+            for group_label in valid_group_labels
+        ],
+        device=product_indices.device,
+    )
+
+    edge_index = torch.stack(
+        [valid_product_indices, matched_price_indices], dim=0
+    ).long()
+    return edge_index_union(edge_index, edge_index.flip(0))
 
 
 def get_candidate_edges(

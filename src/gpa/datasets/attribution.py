@@ -20,8 +20,9 @@ from tqdm import tqdm
 class DetectionGraph(Data):
     """A graph of product and price tag detections."""
 
-    NODE_DIM = 5  # (x, y, w, h, is_product)
-    GLOBAL_EMBEDDING_DIM = 512  # CLIP embedding dimension
+    NODE_DIM = 517  # (cx, cy, w, h, visual_repr, is_product)
+    BBOX_START_IDX = 0
+    BBOX_END_IDX = 3
     INDICATOR_IDX = -1  # Index of the is_product indicator in the node embeddings.
 
     # Base attributes (part of the base `Data` class)
@@ -34,7 +35,7 @@ class DetectionGraph(Data):
     global_embedding: torch.Tensor
     product_indices: torch.LongTensor
     price_indices: torch.LongTensor
-    upc_clusters: torch.LongTensor
+    upc_clusters: torch.LongTensor | None
     gt_prod_price_edge_index: torch.LongTensor
 
     @classmethod
@@ -69,7 +70,6 @@ class DetectionGraph(Data):
         price_mask = x[:, cls.INDICATOR_IDX] == IS_PRICE
         product_indices = torch.argwhere(product_mask).flatten()
         price_indices = torch.argwhere(price_mask).flatten()
-        prod_prod_edge_index = torch.cartesian_prod(product_indices, product_indices).T
 
         bbox_ids = [None] * len(id_to_idx)
         for bbox_id, idx in id_to_idx.items():
@@ -77,7 +77,7 @@ class DetectionGraph(Data):
 
         return cls(
             x=x,
-            edge_index=prod_prod_edge_index,
+            edge_index=shared_upc_edge_index,
             graph_id=graph_components.graph_id,
             bbox_ids=bbox_ids,
             global_embedding=graph_components.global_embedding,
