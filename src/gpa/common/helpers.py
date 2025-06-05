@@ -238,7 +238,7 @@ def connect_products_with_nearest_price_tag_per_group(
     centroids: torch.Tensor,
     product_indices: torch.LongTensor,
     price_indices: torch.LongTensor,
-    prod_prod_edge_index: torch.LongTensor,
+    cluster_assignment: torch.LongTensor,
 ) -> torch.LongTensor:
     """From the provided centroids, return an undirected edge index connecting each product with the price tag with the smallest average distance to all nodes connected to that product.
 
@@ -248,19 +248,15 @@ def connect_products_with_nearest_price_tag_per_group(
         centroids (torch.Tensor): Bbox centroids of all nodes, with shape (n, d).
         product_indices (torch.LongTensor): Indices of product nodes.
         price_indices (torch.LongTensor): Indices of price tag nodes.
-        prod_prod_edge_index (torch.LongTensor): A (2, E) edge index indicating which products are connected (they share a UPC, packaging type, etc.)
+        cluster_assignment (torch.LongTensor): A vector assigning each node to a cluster (e.g. a UPC group), with shape (n,).
 
     Returns:
         torch.LongTensor: A (2, E) undirected edge index connecting each product centroid with a price tag according to the strategy outlined above.
     """
-    subgraph_labels = parse_into_subgraphs(
-        prod_prod_edge_index, num_nodes=len(centroids)
-    )
-
     price_centroids = centroids[price_indices]
     product_centroids = centroids[product_indices]
 
-    product_group_labels = subgraph_labels[product_indices]
+    product_group_labels = cluster_assignment[product_indices]
     unique_group_labels = product_group_labels.unique()
     closest_price_per_group = {}
 

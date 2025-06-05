@@ -99,7 +99,7 @@ class SampleRandomSubgraph(BaseTransform):
                 "`SampleRandomSubgraph` can only be applied to `DetectionGraph` objects."
             )
         p = stats.beta.rvs(self.a, self.b)
-        if graph.upc_clusters is not None:
+        if graph.get("upc_clusters") is not None:
             sub_index = self._cluster_dropout(graph, p)
         else:
             sub_index = self._edge_dropout(graph, p)
@@ -109,7 +109,7 @@ class SampleRandomSubgraph(BaseTransform):
         return new_graph
 
     def _cluster_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
-        assert graph.upc_clusters is not None
+        assert graph.get("upc_clusters") is not None
         cluster_indices = graph.upc_clusters.unique()
         keep_cluster = torch.rand_like(cluster_indices, dtype=torch.float) > p
         keep_indices = torch.where(
@@ -122,7 +122,7 @@ class SampleRandomSubgraph(BaseTransform):
         return sub_index
 
     def _edge_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
-        assert graph.upc_clusters is None
+        assert graph.get("upc_clusters") is None
         sub_index, _ = dropout_edge(
             edge_index=graph.gt_prod_price_edge_index,
             p=p,
