@@ -17,3 +17,9 @@ class Accelerator(Enum):
     CPU = "cpu"
     GPU = "gpu"
     MPS = "mps"
+
+
+class ConnectionStrategy(Enum):
+    NEAREST = "nearest"
+    NEAREST_BELOW = "nearest_below"
+    NEAREST_BELOW_PER_GROUP = "nearest_below_per_group"

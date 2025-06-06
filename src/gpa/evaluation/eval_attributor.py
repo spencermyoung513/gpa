@@ -25,11 +25,10 @@ def evaluate(ckpt_path: Path):
         data_dir=config.dataset_dir,
         batch_size=config.batch_size,
         num_workers=config.num_workers,
-        # We omit a and b since they won't be used anyway (for inference).
         use_visual_info=config.model.use_visual_info,
         aggregate_by_upc=config.model.aggregate_by_upc,
         use_spatially_invariant_coords=config.model.use_spatially_invariant_coords,
-        initial_connection_scheme=config.model.initial_connection_scheme,
+        initial_connection_strategy=config.model.initial_connection_strategy,
     )
     datamodule.setup("")
 

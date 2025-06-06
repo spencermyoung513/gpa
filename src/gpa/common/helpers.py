@@ -334,13 +334,6 @@ def get_candidate_edges(
         real_edges_in_scene: torch.Tensor = batch.gt_prod_price_edge_index[
             :, gt_src_in_scene & gt_dst_in_scene
         ]
-        # Remove edges that are already present (trivial positives).
-        current_src_in_scene = torch.isin(batch.edge_index[0], current_scene_indices)
-        current_dst_in_scene = torch.isin(batch.edge_index[1], current_scene_indices)
-        real_edges_in_scene_not_already_present = edge_index_diff(
-            real_edges_in_scene,
-            batch.edge_index[:, current_src_in_scene & current_dst_in_scene],
-        )
 
         # Generate fake prod-price edges for the current scene (to teach the model what *not* to look for.)
         product_indices = torch.where(batch.x[current_scene_indices, -1] == 1)[0]
@@ -359,25 +352,21 @@ def get_candidate_edges(
         fake_edges_in_scene = edge_index_diff(candidate_edges, real_edges_in_scene)
 
         if balanced:
-            n_positive = real_edges_in_scene_not_already_present.shape[1]
+            n_positive = real_edges_in_scene.shape[1]
             n_negative = fake_edges_in_scene.shape[1]
             if n_positive == 0 or n_negative == 0:
                 continue
             n_samples = min(n_positive, n_negative)
-            real_edges_in_scene_not_already_present = (
-                real_edges_in_scene_not_already_present[
-                    :,
-                    torch.multinomial(
-                        torch.ones(n_positive), n_samples, replacement=False
-                    ),
-                ]
+            pos_mask = torch.multinomial(
+                torch.ones(n_positive), n_samples, replacement=False
             )
-            fake_edges_in_scene = fake_edges_in_scene[
-                :,
-                torch.multinomial(torch.ones(n_negative), n_samples, replacement=False),
-            ]
+            neg_mask = torch.multinomial(
+                torch.ones(n_negative), n_samples, replacement=False
+            )
+            real_edges_in_scene = real_edges_in_scene[:, pos_mask]
+            fake_edges_in_scene = fake_edges_in_scene[:, neg_mask]
 
-        real_edges.append(real_edges_in_scene_not_already_present)
+        real_edges.append(real_edges_in_scene)
         fake_edges.append(fake_edges_in_scene)
 
     # Form a combined edge index for positive and negative edges across all scenes in the batch.

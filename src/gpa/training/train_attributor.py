@@ -67,12 +67,10 @@ def train(config: TrainingConfig):
         data_dir=config.dataset_dir,
         batch_size=config.batch_size,
         num_workers=config.num_workers,
-        a=config.a,
-        b=config.b,
         use_visual_info=config.model.use_visual_info,
         aggregate_by_upc=config.model.aggregate_by_upc,
         use_spatially_invariant_coords=config.model.use_spatially_invariant_coords,
-        initial_connection_scheme=config.model.initial_connection_scheme,
+        initial_connection_strategy=config.model.initial_connection_strategy,
     )
     trainer.fit(model, datamodule=datamodule)
 

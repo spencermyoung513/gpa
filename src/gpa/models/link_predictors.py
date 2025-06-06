@@ -1,3 +1,4 @@
+import math
 from typing import Literal
 
 import torch
@@ -28,22 +29,23 @@ class LinkPredictor(nn.Module):
 
 
 class MLPLinkPredictor(LinkPredictor):
-    """A link predictor that uses a series of linear layers to predict link probability."""
-
     def __init__(
         self,
         layer_widths: list[int],
         use_batch_norm: bool = False,
         dropout: float | None = None,
         strategy: Literal["concat", "hadamard", "add"] = "hadamard",
+        pi: float = 0.5,
     ):
-        """Initialize an `MLPLinkPredictor`.
+        """
+        Initialize an `MLPLinkPredictor`.
 
         Args:
-            layer_widths (list[int]): The desired widths of the linear layers in the MLP.
-            use_batch_norm (bool): Whether to use batch normalization between linear layers. Defaults to False.
-            dropout (float): The dropout rate to use after each linear layer. Defaults to 0.0.
-            strategy (Literal["concat", "hadamard", "add"]): The strategy used to combine the node embeddings.
+            layer_widths (list[int]): The widths of the hidden layers of the MLP.
+            use_batch_norm (bool, optional): Whether to use batch normalization. Defaults to False.
+            dropout (float | None, optional): The dropout rate. Defaults to None (no dropout).
+            strategy (Literal["concat", "hadamard", "add"], optional): The strategy for combining node embeddings. Defaults to "hadamard".
+            pi (float, optional): The prior probability of a link to initialize the network with. Defaults to 0.5.
         """
         super().__init__()
 
@@ -58,12 +60,15 @@ class MLPLinkPredictor(LinkPredictor):
                 if dropout is not None:
                     self.layers.append(nn.Dropout(dropout))
         self.link_predictor = nn.LazyLinear(out_features=1)
+        self._bias_init_val = -math.log(1 - pi) + math.log(pi)
+
+    def initialize_bias(self):
+        if self.link_predictor.bias is not None:
+            with torch.no_grad():
+                self.link_predictor.bias.fill_(self._bias_init_val)
 
     def forward(
-        self,
-        x: torch.Tensor,
-        src: torch.Tensor,
-        dst: torch.Tensor,
+        self, x: torch.Tensor, src: torch.Tensor, dst: torch.Tensor
     ) -> torch.Tensor:
         if self.strategy == "concat":
             h = torch.cat([x[src], x[dst]], dim=1)
@@ -71,8 +76,17 @@ class MLPLinkPredictor(LinkPredictor):
             h = x[src] * x[dst]
         elif self.strategy == "add":
             h = x[src] + x[dst]
+
         for layer in self.layers:
             h = layer(h)
+
+        if not hasattr(self, "_bias_initialized"):
+            with torch.no_grad():
+                # Trigger LazyLinear initialization
+                _ = self.link_predictor(h)
+                self.initialize_bias()
+            self._bias_initialized = True
+
         logits: torch.Tensor = self.link_predictor(h)
         return logits.squeeze(1)
 

@@ -1,8 +1,8 @@
+from functools import partial
 from typing import Literal
 
 import lightning as L
 import torch
-import torch.nn.functional as F
 from gpa.common.enums import EncoderType
 from gpa.common.enums import LinkPredictorType
 from gpa.common.helpers import get_candidate_edges
@@ -16,6 +16,7 @@ from torchmetrics.classification import BinaryF1Score
 from torchmetrics.classification import BinaryPrecision
 from torchmetrics.classification import BinaryRecall
 from torchmetrics.wrappers import BootStrapper
+from torchvision.ops import sigmoid_focal_loss
 
 
 class PriceAttributor(nn.Module):
@@ -84,6 +85,7 @@ class LightningPriceAttributor(L.LightningModule):
         num_epochs: int = 1,
         lr: float = 3e-4,
         weight_decay: float = 1e-5,
+        gamma: float = 0.0,
         balanced_edge_sampling: bool = True,
     ):
         """Initialize a `LightningPriceAttributor`.
@@ -93,22 +95,30 @@ class LightningPriceAttributor(L.LightningModule):
             encoder_settings (dict): The settings for the encoder.
             link_predictor_type (LinkPredictorType): The type of link predictor to use.
             link_predictor_settings (dict): The settings for the link predictor.
-            num_epochs (int): The number of epochs to train for.
-            lr (float): The learning rate.
-            weight_decay (float): The weight decay.
-            balanced_edge_sampling (bool): Whether to sample edges in a balanced manner (w.r.t. number of real/fake edges presented to the link predictor during training).
+            num_epochs (int, optional): The number of epochs to train for. Defaults to 1.
+            lr (float, optional): The learning rate. Defaults to 3e-4.
+            weight_decay (float, optional): The weight decay. Defaults to 1e-5.
+            gamma (float, optional): Gamma parameter for focal loss. Defaults to 0.0 (ordinary BCE loss).
+            balanced_edge_sampling (bool, optional): Whether to sample edges in a balanced manner (w.r.t. number of real/fake edges presented to the link predictor during training). Defaults to True.
         """
         super().__init__()
         self.save_hyperparameters()
         self.num_epochs = num_epochs
         self.lr = lr
         self.weight_decay = weight_decay
+        self.gamma = gamma
         self.balanced_edge_sampling = balanced_edge_sampling
         self.model = PriceAttributor(
             encoder_type=encoder_type,
             encoder_settings=encoder_settings,
             link_predictor_type=link_predictor_type,
             link_predictor_settings=link_predictor_settings,
+        )
+        self.objective = partial(
+            sigmoid_focal_loss,
+            alpha=0.5,
+            gamma=self.gamma,
+            reduction="mean",
         )
         self.trn_precision = BootStrapper(BinaryPrecision())
         self.trn_recall = BootStrapper(BinaryRecall())
@@ -201,7 +211,7 @@ class LightningPriceAttributor(L.LightningModule):
                     cluster_assignment=batch.get("upc_clusters"),
                 )
                 targets = torch.full_like(logits, fill_value=label)
-                loss = loss + F.binary_cross_entropy_with_logits(logits, targets)
+                loss = loss + self.objective(logits, targets)
 
                 probs = torch.sigmoid(logits)
                 precision.update(probs, targets)

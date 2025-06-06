@@ -35,7 +35,7 @@ class DetectionGraph(Data):
     global_embedding: torch.Tensor
     product_indices: torch.LongTensor
     price_indices: torch.LongTensor
-    upc_clusters: torch.LongTensor | None
+    upc_clusters: torch.LongTensor
     gt_prod_price_edge_index: torch.LongTensor
 
     @classmethod

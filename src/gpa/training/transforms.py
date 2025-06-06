@@ -1,8 +1,8 @@
-from typing import Literal
-
 import torch
+from gpa.common.enums import ConnectionStrategy
 from gpa.common.helpers import connect_products_with_nearest_price_tag
 from gpa.common.helpers import connect_products_with_nearest_price_tag_below
+from gpa.common.helpers import connect_products_with_nearest_price_tag_per_group
 from gpa.common.helpers import edge_index_union
 from gpa.datasets.attribution import DetectionGraph
 from scipy import stats
@@ -161,8 +161,8 @@ class MakeBoundingBoxTranslationInvariant(BaseTransform):
 class HeuristicallyConnectGraph(BaseTransform):
     """A transform that heuristically connects the nodes of a `DetectionGraph` (according to a preset scheme)."""
 
-    def __init__(self, scheme: Literal["nearest", "nearest_below"]):
-        self.scheme = scheme
+    def __init__(self, strategy: ConnectionStrategy):
+        self.strategy = strategy
 
     def forward(self, graph: DetectionGraph) -> DetectionGraph:
         """Apply the `HeuristicallyConnectGraph` transform to the given graph.
@@ -182,20 +182,27 @@ class HeuristicallyConnectGraph(BaseTransform):
             raise ValueError(
                 "`HeuristicallyConnectGraph` can only be applied to `DetectionGraph` objects."
             )
-        if self.scheme == "nearest":
+        if self.strategy == ConnectionStrategy.NEAREST:
             edge_index = connect_products_with_nearest_price_tag(
                 centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
                 product_indices=graph.product_indices,
                 price_indices=graph.price_indices,
             )
-        elif self.scheme == "nearest_below":
+        elif self.strategy == ConnectionStrategy.NEAREST_BELOW:
             edge_index = connect_products_with_nearest_price_tag_below(
                 centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
                 product_indices=graph.product_indices,
                 price_indices=graph.price_indices,
             )
+        elif self.strategy == ConnectionStrategy.NEAREST_BELOW_PER_GROUP:
+            edge_index = connect_products_with_nearest_price_tag_per_group(
+                centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
+                product_indices=graph.product_indices,
+                price_indices=graph.price_indices,
+                cluster_assignment=graph.upc_clusters,
+            )
         else:
-            raise ValueError(f"Unknown scheme: {self.scheme}")
+            raise ValueError(f"Unknown connection strategy: {self.strategy}")
         new_graph = graph.clone()
         new_graph.edge_index = edge_index_union(graph.edge_index, edge_index)
         return new_graph
