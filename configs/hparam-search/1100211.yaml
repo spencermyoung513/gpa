@@ -1,5 +1,5 @@
 accelerator: cpu
-balanced_edge_sampling: false
+balanced_edge_sampling: true
 batch_size: 8
 dataset_dir: data/price-graphs-ii
 gamma: 2.0
@@ -15,19 +15,19 @@ model:
     node_hidden_dim: 128
     num_layers: 2
   encoder_type: transformer
-  initial_connection_strategy: nearest_below_per_group
+  initial_connection_strategy: nearest_below
   link_predictor_settings:
     layer_widths:
+    - 128
+    - 128
     - 64
-    - 256
-    - 256
-    - 64
+    - 32
     pi: 0.5
     strategy: hadamard
   link_predictor_type: mlp
-  use_spatially_invariant_coords: true
-  use_visual_info: true
+  use_spatially_invariant_coords: false
+  use_visual_info: false
 num_epochs: 20
 num_workers: 0
-run_name: '1110301'
+run_name: '1100211'
 weight_decay: 1.0e-05

@@ -40,7 +40,7 @@ def get_choice(choices: list[T]) -> tuple[T, int]:
 
 
 def generate_random_config(save_dir: Path) -> bool:
-    layer_widths, layer_widths_idx = get_choice([[128, 64], [64, 256, 256, 64]])
+    layer_widths, layer_widths_idx = get_choice([[128, 64], [128, 128, 64, 32]])
     encoder_type, encoder_idx = get_choice(
         [EncoderType.IDENTITY, EncoderType.TRANSFORMER]
     )
@@ -77,7 +77,7 @@ def generate_random_config(save_dir: Path) -> bool:
     }
 
     model_config = ModelConfig(
-        use_visual_info=True,
+        use_visual_info=False,
         aggregate_by_upc=aggregate_by_upc,
         use_spatially_invariant_coords=use_spatially_invariant_coords,
         initial_connection_strategy=initial_connection_strategy,

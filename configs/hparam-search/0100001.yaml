@@ -1,8 +1,8 @@
 accelerator: cpu
-balanced_edge_sampling: true
+balanced_edge_sampling: false
 batch_size: 8
 dataset_dir: data/price-graphs-ii
-gamma: 0.0
+gamma: 2.0
 logging:
   chkp_dir: chkp
   log_dir: logs
@@ -15,7 +15,7 @@ model:
     node_hidden_dim: 128
     num_layers: 2
   encoder_type: transformer
-  initial_connection_strategy: nearest_below
+  initial_connection_strategy: null
   link_predictor_settings:
     layer_widths:
     - 128
@@ -24,8 +24,8 @@ model:
     strategy: hadamard
   link_predictor_type: mlp
   use_spatially_invariant_coords: false
-  use_visual_info: true
+  use_visual_info: false
 num_epochs: 20
 num_workers: 0
-run_name: '0100210'
+run_name: '0100001'
 weight_decay: 1.0e-05

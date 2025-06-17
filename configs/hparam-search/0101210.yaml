@@ -15,7 +15,7 @@ model:
     node_hidden_dim: 128
     num_layers: 2
   encoder_type: transformer
-  initial_connection_strategy: null
+  initial_connection_strategy: nearest_below
   link_predictor_settings:
     layer_widths:
     - 128
@@ -24,8 +24,8 @@ model:
     strategy: hadamard
   link_predictor_type: mlp
   use_spatially_invariant_coords: false
-  use_visual_info: true
+  use_visual_info: false
 num_epochs: 20
 num_workers: 0
-run_name: '0101010'
+run_name: '0101210'
 weight_decay: 1.0e-05

@@ -22,7 +22,7 @@ model:
     strategy: concat
   link_predictor_type: mlp
   use_spatially_invariant_coords: true
-  use_visual_info: true
+  use_visual_info: false
 num_epochs: 20
 num_workers: 0
 run_name: '0011011'
