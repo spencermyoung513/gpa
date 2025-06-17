@@ -61,6 +61,7 @@ def train(config: TrainingConfig):
         num_epochs=config.num_epochs,
         lr=config.lr,
         weight_decay=config.weight_decay,
+        gamma=config.gamma,
         balanced_edge_sampling=config.balanced_edge_sampling,
     )
     datamodule = PriceAttributionDataModule(
