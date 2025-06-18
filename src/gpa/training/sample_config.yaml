@@ -8,7 +8,6 @@ accelerator: cpu
 balanced_edge_sampling: True
 model:
   use_visual_info: False
-  aggregate_by_upc: True
   use_spatially_invariant_coords: True
   encoder_type: transformer
   encoder_settings:

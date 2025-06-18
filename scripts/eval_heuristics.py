@@ -39,7 +39,6 @@ def evaluate(
     datamodule = PriceAttributionDataModule(
         data_dir=dataset_dir,
         num_workers=0,
-        aggregate_by_upc=True,  # Ensures upc clusters are available.
     )
     datamodule.setup("")
 

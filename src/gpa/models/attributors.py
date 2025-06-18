@@ -49,7 +49,6 @@ class PriceAttributor(nn.Module):
         edge_index: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
-        cluster_assignment: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Predict the probability that the node pairs indexed by src/dst are connected (conditioned on the input graph).
 
@@ -60,7 +59,6 @@ class PriceAttributor(nn.Module):
             edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
-            cluster_assignment (torch.Tensor | None, optional): A vector assigning each node to a cluster (e.g. a UPC group), with shape (n,). If None, no clustering is assumed.
 
         Returns:
             torch.Tensor: Logits representing the link probability for each pair, with shape (num_links_to_predict,).
@@ -68,7 +66,6 @@ class PriceAttributor(nn.Module):
         h = self.encoder(
             x=x,
             edge_index=edge_index,
-            cluster_assignment=cluster_assignment,
         )
         return self.link_predictor(x=h, src=src, dst=dst)
 
@@ -136,7 +133,6 @@ class LightningPriceAttributor(L.LightningModule):
         edge_index: torch.Tensor,
         src: torch.Tensor,
         dst: torch.Tensor,
-        cluster_assignment: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Predict the probability that the node pairs indexed by src/dst are connected (conditioned on the input graph).
 
@@ -157,7 +153,6 @@ class LightningPriceAttributor(L.LightningModule):
             edge_index=edge_index,
             src=src,
             dst=dst,
-            cluster_assignment=cluster_assignment,
         )
 
     def training_step(self, batch: Batch, batch_idx: int):
@@ -208,7 +203,6 @@ class LightningPriceAttributor(L.LightningModule):
                     edge_index=batch.edge_index,
                     src=edges[0],
                     dst=edges[1],
-                    cluster_assignment=batch.get("upc_clusters"),
                 )
                 targets = torch.full_like(logits, fill_value=label)
                 loss = loss + self.objective(logits, targets)

@@ -16,7 +16,6 @@ class LoggingConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     use_visual_info: bool = False
-    aggregate_by_upc: bool = False
     use_spatially_invariant_coords: bool = False
     initial_connection_strategy: ConnectionStrategy | None = None
     encoder_type: EncoderType
