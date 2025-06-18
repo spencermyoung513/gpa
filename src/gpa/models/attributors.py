@@ -46,10 +46,10 @@ class PriceAttributor(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        edge_index: torch.Tensor,
+        edge_index: torch.LongTensor,
         src: torch.Tensor,
         dst: torch.Tensor,
-        cluster_assignment: torch.Tensor | None = None,
+        edge_attr: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Predict the probability that the node pairs indexed by src/dst are connected (conditioned on the input graph).
 
@@ -57,10 +57,10 @@ class PriceAttributor(nn.Module):
 
         Args:
             x (torch.Tensor): Node embeddings, with shape (n, node_dim).
-            edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
+            edge_index (torch.LongTensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
-            cluster_assignment (torch.Tensor | None, optional): A vector assigning each node to a cluster (e.g. a UPC group), with shape (n,). If None, no clustering is assumed.
+            edge_attr (torch.Tensor | None, optional): A (num_edges, edge_dim) tensor of edge features (in 1d, these are edge weights). If `None`, a (num_edges, 1) tensor of ones will be used.
 
         Returns:
             torch.Tensor: Logits representing the link probability for each pair, with shape (num_links_to_predict,).
@@ -68,7 +68,7 @@ class PriceAttributor(nn.Module):
         h = self.encoder(
             x=x,
             edge_index=edge_index,
-            cluster_assignment=cluster_assignment,
+            edge_attr=edge_attr,
         )
         return self.link_predictor(x=h, src=src, dst=dst)
 
@@ -133,10 +133,10 @@ class LightningPriceAttributor(L.LightningModule):
     def forward(
         self,
         x: torch.Tensor,
-        edge_index: torch.Tensor,
+        edge_index: torch.LongTensor,
         src: torch.Tensor,
         dst: torch.Tensor,
-        cluster_assignment: torch.Tensor | None = None,
+        edge_attr: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Predict the probability that the node pairs indexed by src/dst are connected (conditioned on the input graph).
 
@@ -147,7 +147,7 @@ class LightningPriceAttributor(L.LightningModule):
             edge_index (torch.Tensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
             src (torch.Tensor): Indices of source nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
             dst (torch.Tensor): Indices of destination nodes in the pairs we are predicting links between, with shape (num_links_to_predict,).
-            cluster_assignment (torch.Tensor | None, optional): A (n,) tensor assigning each node to a cluster (e.g. a UPC group). Before link prediction, all node embeddings within a cluster will be average-pooled. If None, no clustering is assumed.
+            edge_attr (torch.Tensor | None, optional): A (num_edges, edge_dim) tensor of edge features (in 1d, these are edge weights). If `None`, a (num_edges, 1) tensor of ones will be used.
 
         Returns:
             torch.Tensor: Logits representing the link probability for each specified pair, with shape (num_links_to_predict,).
@@ -155,9 +155,9 @@ class LightningPriceAttributor(L.LightningModule):
         return self.model(
             x=x,
             edge_index=edge_index,
+            edge_attr=edge_attr,
             src=src,
             dst=dst,
-            cluster_assignment=cluster_assignment,
         )
 
     def training_step(self, batch: Batch, batch_idx: int):
@@ -206,9 +206,9 @@ class LightningPriceAttributor(L.LightningModule):
                 logits = self(
                     x=batch.x,
                     edge_index=batch.edge_index,
+                    edge_attr=batch.get("edge_attr"),
                     src=edges[0],
                     dst=edges[1],
-                    cluster_assignment=batch.get("upc_clusters"),
                 )
                 targets = torch.full_like(logits, fill_value=label)
                 loss = loss + self.objective(logits, targets)

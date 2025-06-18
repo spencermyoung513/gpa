@@ -3,15 +3,14 @@
 This script will randomly sample from a number of binary indicators that specify hyperparameters we want to test the effect of.
 It will then generate a config with the implied settings, where the config name is a ternary string indicating the status of each sampled indicator.
 
-The ternary will be formatted (0 | 1)(0 | 1)(0 | 1)(0 | 1)(0 | 1 | 2 | 3)(0 | 1)(0 | 1).yaml, where:
+The ternary will be formatted (0 | 1)(0 | 1)(0 | 1)(0 | 1 | 2 | 3)(0 | 1)(0 | 1).yaml, where:
 
 - The first digit indicates whether/not the model uses a larger MLP for its link predictor (vs. a smaller one)
 - The second digit indicates whether/not the model encodes graph nodes using a GNN before performing link prediction
 - The third digit indicates whether/not the model uses a translationally-invariant representation of bbox centroids as its input
-- The fourth digit indicates whether/not the model pools representations by common UPC before making link predictions
-- The fifth digit indicates which "initial connection heuristic" is used to seed the graph (further processed by a GNN)
-- The sixth digit indicates whether/not the model balances the # of positive/negative edges it propagates loss on during each training iteration
-- The seventh digit indicates whether/not the model trains with focal loss (gamma = 2.0) vs. regular binary cross-entropy.
+- The fourth digit indicates which "initial connection heuristic" is used to seed the graph (further processed by a GNN)
+- The fifth digit indicates whether/not the model balances the # of positive/negative edges it propagates loss on during each training iteration
+- The sixth digit indicates whether/not the model trains with focal loss (gamma = 2.0) vs. regular binary cross-entropy.
 
 All other training settings are shared across model runs (number of epochs, batch size, dataset, etc.)
 """
@@ -45,7 +44,6 @@ def generate_random_config(save_dir: Path) -> bool:
         [EncoderType.IDENTITY, EncoderType.TRANSFORMER]
     )
     use_spatially_invariant_coords, spatial_idx = get_choice([False, True])
-    aggregate_by_upc, aggregate_idx = get_choice([False, True])
     initial_connection_strategy, heuristic_idx = (
         get_choice(
             [
@@ -61,7 +59,7 @@ def generate_random_config(save_dir: Path) -> bool:
     balanced_edge_sampling, edge_sampling_idx = get_choice([False, True])
     gamma, focal_loss_idx = get_choice([0.0, 2.0])
 
-    run_name = f"{layer_widths_idx}{encoder_idx}{spatial_idx}{aggregate_idx}{heuristic_idx}{edge_sampling_idx}{focal_loss_idx}"
+    run_name = f"{layer_widths_idx}{encoder_idx}{spatial_idx}{heuristic_idx}{edge_sampling_idx}{focal_loss_idx}"
     save_path = save_dir / f"{run_name}.yaml"
     if save_path.exists():
         return False
@@ -78,7 +76,6 @@ def generate_random_config(save_dir: Path) -> bool:
 
     model_config = ModelConfig(
         use_visual_info=False,
-        aggregate_by_upc=aggregate_by_upc,
         use_spatially_invariant_coords=use_spatially_invariant_coords,
         initial_connection_strategy=initial_connection_strategy,
         encoder_type=encoder_type,

@@ -52,10 +52,7 @@ def train(config: TrainingConfig):
     )
     model = LightningPriceAttributor(
         encoder_type=config.model.encoder_type,
-        encoder_settings={
-            **config.model.encoder_settings,
-            "aggregate_by_cluster": config.model.aggregate_by_upc,
-        },
+        encoder_settings=config.model.encoder_settings,
         link_predictor_type=config.model.link_predictor_type,
         link_predictor_settings=config.model.link_predictor_settings,
         num_epochs=config.num_epochs,
@@ -69,7 +66,6 @@ def train(config: TrainingConfig):
         batch_size=config.batch_size,
         num_workers=config.num_workers,
         use_visual_info=config.model.use_visual_info,
-        aggregate_by_upc=config.model.aggregate_by_upc,
         use_spatially_invariant_coords=config.model.use_spatially_invariant_coords,
         initial_connection_strategy=config.model.initial_connection_strategy,
     )

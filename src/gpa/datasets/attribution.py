@@ -20,7 +20,7 @@ from tqdm import tqdm
 class DetectionGraph(Data):
     """A graph of product and price tag detections."""
 
-    NODE_DIM = 517  # (cx, cy, w, h, visual_repr, is_product)
+    NODE_DIM = 5  # (cx, cy, w, h, is_product)
     BBOX_START_IDX = 0
     BBOX_END_IDX = 3
     INDICATOR_IDX = -1  # Index of the is_product indicator in the node embeddings.
@@ -35,7 +35,7 @@ class DetectionGraph(Data):
     global_embedding: torch.Tensor
     product_indices: torch.LongTensor
     price_indices: torch.LongTensor
-    upc_clusters: torch.LongTensor
+    upc_groups: torch.LongTensor
     gt_prod_price_edge_index: torch.LongTensor
 
     @classmethod
@@ -61,7 +61,7 @@ class DetectionGraph(Data):
             id_to_idx=id_to_idx,
             upc_groups=graph_components.upc_groups,
         )
-        upc_clusters = parse_into_subgraphs(shared_upc_edge_index, num_nodes=x.shape[0])
+        upc_groups = parse_into_subgraphs(shared_upc_edge_index, num_nodes=x.shape[0])
         gt_prod_price_edge_index = cls._get_gt_prod_price_edge_index(
             id_to_idx=id_to_idx,
             prod_price_groups=graph_components.prod_price_groups,
@@ -84,7 +84,7 @@ class DetectionGraph(Data):
             product_indices=product_indices,
             price_indices=price_indices,
             gt_prod_price_edge_index=gt_prod_price_edge_index,
-            upc_clusters=upc_clusters,
+            upc_groups=upc_groups,
         )
 
     def plot(
@@ -215,14 +215,14 @@ class DetectionGraph(Data):
         return torch.cat(edge_indices, dim=1)
 
     def __cat_dim__(self, key, value, *args, **kwargs):
-        if key in ("product_indices", "price_indices", "upc_clusters"):
+        if key in ("product_indices", "price_indices", "upc_groups"):
             return 0
         elif key == "global_embedding":
             return None
         return super().__cat_dim__(key, value, *args, **kwargs)
 
     def __inc__(self, key, value, *args, **kwargs):
-        if key in ("product_indices", "price_indices", "upc_clusters"):
+        if key in ("product_indices", "price_indices", "upc_groups"):
             return self.num_nodes
         return super().__inc__(key, value, *args, **kwargs)
 

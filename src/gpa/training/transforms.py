@@ -5,6 +5,7 @@ from gpa.common.helpers import connect_products_with_nearest_price_tag_below
 from gpa.common.helpers import connect_products_with_nearest_price_tag_per_group
 from gpa.common.helpers import edge_index_union
 from gpa.datasets.attribution import DetectionGraph
+from gpa.models.attributors import PriceAttributor
 from scipy import stats
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import dropout_edge
@@ -36,27 +37,6 @@ class MaskOutVisualInformation(BaseTransform):
         return new_graph
 
 
-class RemoveUPCClusters(BaseTransform):
-    """A transform that removes all nodes in a `DetectionGraph` that are part of the same UPC cluster."""
-
-    def forward(self, graph: DetectionGraph) -> DetectionGraph:
-        """Apply the `RemoveUPCClusters` transform to the given graph.
-
-        Args:
-            graph (DetectionGraph): The graph to apply the transform to.
-
-        Returns:
-            DetectionGraph: A transformed version of the graph.
-        """
-        if not isinstance(graph, DetectionGraph):
-            raise ValueError(
-                "`RemoveUPCClusters` can only be applied to `DetectionGraph` objects."
-            )
-        new_graph = graph.clone()
-        new_graph.upc_clusters = None
-        return new_graph
-
-
 class SampleRandomSubgraph(BaseTransform):
     """A transform that randomly forms a partial subgraph of a `DetectionGraph` (to be completed by a model)."""
 
@@ -75,7 +55,7 @@ class SampleRandomSubgraph(BaseTransform):
 
         This transformation will apply random Bernoulli dropout to a `DetectionGraph`'s
         ground-truth prod-price edges. The exact behavior of this dropout is conditional
-        on whether/not the graph is clustered by UPC (path 1) or not (path 2). In both cases,
+        on whether/not the graph is grouped by UPC (path 1) or not (path 2). In both cases,
         we sample `p` from Beta(`a`, `b`).
 
         Path 1: For a given UPC group, with probability `p`, all corresponding ground-truth
@@ -99,8 +79,8 @@ class SampleRandomSubgraph(BaseTransform):
                 "`SampleRandomSubgraph` can only be applied to `DetectionGraph` objects."
             )
         p = stats.beta.rvs(self.a, self.b)
-        if graph.get("upc_clusters") is not None:
-            sub_index = self._cluster_dropout(graph, p)
+        if graph.get("upc_groups") is not None:
+            sub_index = self._group_dropout(graph, p)
         else:
             sub_index = self._edge_dropout(graph, p)
 
@@ -108,12 +88,12 @@ class SampleRandomSubgraph(BaseTransform):
         new_graph.edge_index = edge_index_union(graph.edge_index, sub_index)
         return new_graph
 
-    def _cluster_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
-        assert graph.get("upc_clusters") is not None
-        cluster_indices = graph.upc_clusters.unique()
-        keep_cluster = torch.rand_like(cluster_indices, dtype=torch.float) > p
+    def _group_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
+        assert graph.get("upc_groups") is not None
+        group_indices = graph.upc_groups.unique()
+        keep_group = torch.rand_like(group_indices, dtype=torch.float) > p
         keep_indices = torch.where(
-            torch.isin(graph.upc_clusters, cluster_indices[keep_cluster])
+            torch.isin(graph.upc_groups, group_indices[keep_group])
             | torch.isin(torch.arange(graph.x.shape[0]), graph.price_indices)
         )[0]
         src_mask = torch.isin(graph.gt_prod_price_edge_index[0], keep_indices)
@@ -122,7 +102,7 @@ class SampleRandomSubgraph(BaseTransform):
         return sub_index
 
     def _edge_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
-        assert graph.get("upc_clusters") is None
+        assert graph.get("upc_groups") is None
         sub_index, _ = dropout_edge(
             edge_index=graph.gt_prod_price_edge_index,
             p=p,
@@ -199,10 +179,70 @@ class HeuristicallyConnectGraph(BaseTransform):
                 centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
                 product_indices=graph.product_indices,
                 price_indices=graph.price_indices,
-                cluster_assignment=graph.upc_clusters,
+                cluster_assignment=graph.upc_groups,
             )
         else:
             raise ValueError(f"Unknown connection strategy: {self.strategy}")
         new_graph = graph.clone()
         new_graph.edge_index = edge_index_union(graph.edge_index, edge_index)
+        return new_graph
+
+
+class ConnectGraphWithModel(BaseTransform):
+    """A transform that connects the nodes of a `DetectionGraph` using a trained model."""
+
+    def __init__(self, model: PriceAttributor, edge_prob_threshold: float = 0.5):
+        """Initialize a `ConnectGraphWithModel` transform.
+
+        Args:
+            model (PriceAttributor): The model to connect detection graphs with.
+            edge_prob_threshold (float, optional): Link probability threshold for connecting two nodes. Set to 0 to connect everything. Defaults to 0.5.
+        """
+        self.model = model
+        self.edge_prob_threshold = edge_prob_threshold
+
+    @torch.inference_mode()
+    def forward(self, graph: DetectionGraph) -> DetectionGraph:
+        """Apply the `ConnectGraphWithModel` transform to the given graph.
+
+        This transform uses a trained model to connect the nodes of a `DetectionGraph`.
+
+        Args:
+            graph (DetectionGraph): The graph to apply the transform to.
+
+        Returns:
+            DetectionGraph: The graph, with an edge index connecting all products and price tags above the threshold (with edge attributes indicating the predicted edge probabilities).
+        """
+        if not isinstance(graph, DetectionGraph):
+            raise ValueError(
+                "`ConnectGraphWithModel` can only be applied to `DetectionGraph` objects."
+            )
+        x = graph.x
+        edge_index = graph.edge_index
+        src, dst = torch.cartesian_prod(graph.product_indices, graph.price_indices).T
+        probs = self.model(
+            x=x,
+            edge_index=edge_index,
+            edge_attr=graph.get("edge_attr"),
+            src=src,
+            dst=dst,
+        ).sigmoid()
+        prod_price_edge_index = torch.stack([src, dst], dim=0)
+        prod_prod_mask = torch.isin(
+            graph.edge_index[0], graph.product_indices
+        ) & torch.isin(graph.edge_index[1], graph.product_indices)
+        prod_prod_edge_index = graph.edge_index[:, prod_prod_mask]
+
+        keep_mask = probs > self.edge_prob_threshold
+
+        prod_price_edge_attr = probs[keep_mask].view(-1, 1)
+        prod_price_edge_index = prod_price_edge_index[:, keep_mask]
+        prod_prod_edge_attr = torch.ones((prod_prod_edge_index.shape[1], 1))
+        new_graph = graph.clone()
+        new_graph.edge_index = torch.cat(
+            [prod_price_edge_index, prod_prod_edge_index], dim=1
+        )
+        new_graph.edge_attr = torch.cat(
+            [prod_price_edge_attr, prod_prod_edge_attr], dim=0
+        )
         return new_graph
