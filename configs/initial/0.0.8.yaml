@@ -1,0 +1,26 @@
+# MLP-only, no visual info, all-at-once link prediction, pool by UPC, spatially-invariant coords
+# WIDER AND DEEPER MLP
+
+run_name: 0.0.8
+num_epochs: 20
+batch_size: 8
+lr: 3e-4
+weight_decay: 1e-5
+num_workers: 0
+accelerator: cpu
+balanced_edge_sampling: True
+model:
+  use_visual_info: False
+  aggregate_by_upc: True
+  use_spatially_invariant_coords: True
+  encoder_type: identity
+  link_predictor_type: mlp
+  link_predictor_settings:
+    strategy: concat
+    layer_widths: [64, 256, 256, 64]
+dataset_dir: data/price-graphs-ii
+logging:
+  use_wandb: True
+  project_name: price-attribution
+  log_dir: logs
+  chkp_dir: chkp

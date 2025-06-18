@@ -1,0 +1,29 @@
+accelerator: cpu
+balanced_edge_sampling: false
+batch_size: 8
+dataset_dir: data/price-graphs-ii
+gamma: 2.0
+logging:
+  chkp_dir: chkp
+  log_dir: logs
+  project_name: price-attribution
+  use_wandb: true
+lr: 0.0003
+model:
+  aggregate_by_upc: false
+  encoder_settings: {}
+  encoder_type: identity
+  initial_connection_strategy: null
+  link_predictor_settings:
+    layer_widths:
+    - 128
+    - 64
+    pi: 0.5
+    strategy: concat
+  link_predictor_type: mlp
+  use_spatially_invariant_coords: true
+  use_visual_info: false
+num_epochs: 20
+num_workers: 0
+run_name: '0010001'
+weight_decay: 1.0e-05

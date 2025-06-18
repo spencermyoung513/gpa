@@ -1,0 +1,29 @@
+run_name: 0.3.9
+num_epochs: 20
+batch_size: 8
+lr: 3e-4
+weight_decay: 1e-5
+gamma: 2.0
+num_workers: 0
+accelerator: cpu
+balanced_edge_sampling: False
+model:
+  use_visual_info: False
+  aggregate_by_upc: False
+  use_spatially_invariant_coords: True
+  initial_connection_strategy: nearest_below_per_group
+  encoder_type: transformer
+  encoder_settings:
+    node_hidden_dim: 128
+    num_layers: 3
+  link_predictor_type: mlp
+  link_predictor_settings:
+    strategy: hadamard
+    layer_widths: [128, 64, 32]
+    pi: 0.5
+dataset_dir: data/price-graphs-ii
+logging:
+  use_wandb: True
+  project_name: price-attribution
+  log_dir: logs
+  chkp_dir: chkp
