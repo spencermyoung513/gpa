@@ -52,7 +52,7 @@ class Encoder(nn.Module, ABC, Generic[T]):
         Args:
             x (torch.Tensor): Graph node embeddings, with shape (n, node_dim).
             edge_index (torch.LongTensor): Edge indices specifying the adjacency matrix for the graph being predicted on, with shape (2, num_edges).
-            edge_attr (torch.Tensor | None, optional): A (num_edges, edge_dim) tensor of edge features (in 1d, these are edge weights). If `None`, a (num_edges, 1) tensor of ones will be used.
+            edge_attr (torch.Tensor | None, optional): A (num_edges, edge_dim) tensor of edge features (in 1d, these are edge weights). If `None`, 1s will be assumed.
 
         Returns:
             torch.Tensor: The encoded node embeddings, with shape (n, `self.node_hidden_dim`).
@@ -60,10 +60,6 @@ class Encoder(nn.Module, ABC, Generic[T]):
         if edge_attr is not None and edge_attr.size(0) != edge_index.size(1):
             raise ValueError(
                 "edge_attr and edge_index must have the same number of edges"
-            )
-        if edge_attr is None:
-            edge_attr = torch.ones(
-                edge_index.shape[1], 1, device=x.device, dtype=x.dtype
             )
         for idx, layer in enumerate(self.layers):
             x = layer(x, edge_index=edge_index, edge_attr=edge_attr)
