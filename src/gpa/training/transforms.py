@@ -55,7 +55,7 @@ class SampleRandomSubgraph(BaseTransform):
 
         This transformation will apply random Bernoulli dropout to a `DetectionGraph`'s
         ground-truth prod-price edges. The exact behavior of this dropout is conditional
-        on whether/not the graph is clustered by UPC (path 1) or not (path 2). In both cases,
+        on whether/not the graph is grouped by UPC (path 1) or not (path 2). In both cases,
         we sample `p` from Beta(`a`, `b`).
 
         Path 1: For a given UPC group, with probability `p`, all corresponding ground-truth
@@ -79,8 +79,8 @@ class SampleRandomSubgraph(BaseTransform):
                 "`SampleRandomSubgraph` can only be applied to `DetectionGraph` objects."
             )
         p = stats.beta.rvs(self.a, self.b)
-        if graph.get("upc_clusters") is not None:
-            sub_index = self._cluster_dropout(graph, p)
+        if graph.get("upc_groups") is not None:
+            sub_index = self._group_dropout(graph, p)
         else:
             sub_index = self._edge_dropout(graph, p)
 
@@ -88,12 +88,12 @@ class SampleRandomSubgraph(BaseTransform):
         new_graph.edge_index = edge_index_union(graph.edge_index, sub_index)
         return new_graph
 
-    def _cluster_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
-        assert graph.get("upc_clusters") is not None
-        cluster_indices = graph.upc_clusters.unique()
-        keep_cluster = torch.rand_like(cluster_indices, dtype=torch.float) > p
+    def _group_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
+        assert graph.get("upc_groups") is not None
+        group_indices = graph.upc_groups.unique()
+        keep_group = torch.rand_like(group_indices, dtype=torch.float) > p
         keep_indices = torch.where(
-            torch.isin(graph.upc_clusters, cluster_indices[keep_cluster])
+            torch.isin(graph.upc_groups, group_indices[keep_group])
             | torch.isin(torch.arange(graph.x.shape[0]), graph.price_indices)
         )[0]
         src_mask = torch.isin(graph.gt_prod_price_edge_index[0], keep_indices)
@@ -102,7 +102,7 @@ class SampleRandomSubgraph(BaseTransform):
         return sub_index
 
     def _edge_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
-        assert graph.get("upc_clusters") is None
+        assert graph.get("upc_groups") is None
         sub_index, _ = dropout_edge(
             edge_index=graph.gt_prod_price_edge_index,
             p=p,
@@ -179,7 +179,7 @@ class HeuristicallyConnectGraph(BaseTransform):
                 centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
                 product_indices=graph.product_indices,
                 price_indices=graph.price_indices,
-                cluster_assignment=graph.upc_clusters,
+                cluster_assignment=graph.upc_groups,
             )
         else:
             raise ValueError(f"Unknown connection strategy: {self.strategy}")
@@ -219,14 +219,13 @@ class ConnectGraphWithModel(BaseTransform):
             )
         x = graph.x
         edge_index = graph.edge_index
-        cluster_assignment = graph.get("upc_clusters")
         src, dst = torch.cartesian_prod(graph.product_indices, graph.price_indices).T
         probs = self.model(
             x=x,
             edge_index=edge_index,
+            edge_attr=graph.get("edge_attr"),
             src=src,
             dst=dst,
-            cluster_assignment=cluster_assignment,
         ).sigmoid()
         prod_price_edge_index = torch.stack([src, dst], dim=0)
         prod_prod_mask = torch.isin(

@@ -57,7 +57,7 @@ def evaluate(
             "price_indices": batch.price_indices,
         }
         if method == "nearest_per_group":
-            kwargs["cluster_assignment"] = batch.upc_clusters
+            kwargs["cluster_assignment"] = batch.upc_groups
         pred_edge_index = connector(**kwargs)
 
         real_edges_set = set(map(tuple, real_edges.T.tolist()))

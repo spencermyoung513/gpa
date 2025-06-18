@@ -4,7 +4,6 @@ from enum import Enum
 class EncoderType(Enum):
     TRANSFORMER = "transformer"
     GAT = "gat"
-    GCN = "gcn"
     IDENTITY = "identity"
 
 
