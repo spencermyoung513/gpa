@@ -26,7 +26,7 @@ def train(config: TrainingConfig):
         )
     log_dir = config.logging.log_dir / config.run_name
     log_dir.mkdir(parents=True, exist_ok=True)
-    with open(log_dir / "config.yaml", "w") as f:
+    with open(log_dir / "train_config.yaml", "w") as f:
         yaml.dump(config.model_dump(mode="json"), f)
 
     best_ckpt_callback = ModelCheckpoint(
@@ -67,7 +67,7 @@ def train(config: TrainingConfig):
         num_workers=config.num_workers,
         use_visual_info=config.model.use_visual_info,
         use_spatially_invariant_coords=config.model.use_spatially_invariant_coords,
-        initial_connection_strategy=config.model.initial_connection_strategy,
+        initial_connection_config=config.model.initial_connection,
     )
     trainer.fit(model, datamodule=datamodule)
 

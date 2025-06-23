@@ -28,7 +28,7 @@ To view a dataset, simply use the [Data Viewer](notebooks/data_viewer.ipynb). Th
 To train a model, first fill out a config (using the [example config](src/gpa/training/sample_config.yaml) as a template). Then, run the [training script](src/gpa/training/train_attributor.py):
 
 ```bash
-uv run train --config path/to/your/config.yaml
+uv run train --config path/to/your/train/config.yaml
 ```
 
 The training script will save trained weights (both the best in terms of validation loss and the most recent copy) to the checkpoint directory specified in the config, and metrics will be logged in Weights and Biases (if indicated in the config) or locally (to the log directory specified in the config). The train config will also be saved in this log directory.
@@ -40,10 +40,10 @@ Use the [Metrics Viewer](notebooks/metrics_viewer.ipynb) to view loss curves and
 Models can be evaluated via the [Evaluation Script](src/gpa/evaluation/evaluate_attributor.py). To run the evaluation script, use the following command:
 
 ```bash
-uv run eval --ckpt path/to/model/checkpoint.ckpt
+uv run eval --config path/to/your/eval/config.yaml
 ```
 
-This script will follow the logging settings specified in the config (WandB vs. local). It will also save evaluation metrics to a YAML file in the log directory.
+Your eval config should contain a pointer to the original training config, along with a path to the model weights to evaluate and a results directory to save metrics to. The eval script will follow the logging settings (and all other settings) specified in the training config (WandB vs. local).
 
 To get a qualitative sense of how well a model performs for price attribution, use the [Predictions Viewer](notebooks/predictions_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price attribution predictions (and comparing them to the ground truth).
 

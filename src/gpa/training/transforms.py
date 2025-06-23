@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 from gpa.common.enums import ConnectionStrategy
 from gpa.common.helpers import connect_products_with_nearest_price_tag
@@ -5,7 +7,7 @@ from gpa.common.helpers import connect_products_with_nearest_price_tag_below
 from gpa.common.helpers import connect_products_with_nearest_price_tag_per_group
 from gpa.common.helpers import edge_index_union
 from gpa.datasets.attribution import DetectionGraph
-from gpa.models.attributors import PriceAttributor
+from gpa.models.attributors import LightningPriceAttributor
 from scipy import stats
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import dropout_edge
@@ -188,18 +190,27 @@ class HeuristicallyConnectGraph(BaseTransform):
         return new_graph
 
 
-class ConnectGraphWithModel(BaseTransform):
-    """A transform that connects the nodes of a `DetectionGraph` using a trained model."""
+class ConnectGraphWithSeedModel(BaseTransform):
+    """A transform that connects the nodes of a `DetectionGraph` using a pre-trained "seed" model."""
 
-    def __init__(self, model: PriceAttributor, edge_prob_threshold: float = 0.5):
+    def __init__(
+        self,
+        seed_model_chkp_path: Path,
+        seed_model_transform: BaseTransform,
+        edge_prob_threshold: float = 0.5,
+    ):
         """Initialize a `ConnectGraphWithModel` transform.
 
         Args:
-            model (PriceAttributor): The model to connect detection graphs with.
-            edge_prob_threshold (float, optional): Link probability threshold for connecting two nodes. Set to 0 to connect everything. Defaults to 0.5.
+            seed_model_chkp_path (Path): Path to the weights of the seed model that will connect the graph.
+            seed_model_transform (BaseTransform): Transform to call on graphs before passing through the seed model.
+            edge_prob_threshold (float, optional): Link probability threshold for connecting two nodes according to model beliefs. Set to 0 to connect everything. Defaults to 0.5.
         """
-        self.model = model
+        self.transform = seed_model_transform
         self.edge_prob_threshold = edge_prob_threshold
+        self.model = LightningPriceAttributor.load_from_checkpoint(
+            checkpoint_path=seed_model_chkp_path, map_location="cpu"
+        ).model
 
     @torch.inference_mode()
     def forward(self, graph: DetectionGraph) -> DetectionGraph:
@@ -217,32 +228,46 @@ class ConnectGraphWithModel(BaseTransform):
             raise ValueError(
                 "`ConnectGraphWithModel` can only be applied to `DetectionGraph` objects."
             )
-        x = graph.x
-        edge_index = graph.edge_index
-        src, dst = torch.cartesian_prod(graph.product_indices, graph.price_indices).T
+
+        # Preprocess a graph in the way the seed model expects.
+        inference_graph: DetectionGraph = self.transform(graph.clone())
+
+        # Run inference on the preprocessed graph with the seed model.
+        x = inference_graph.x
+        edge_index = inference_graph.edge_index
+        src, dst = torch.cartesian_prod(
+            inference_graph.product_indices, inference_graph.price_indices
+        ).T
         probs = self.model(
             x=x,
             edge_index=edge_index,
-            edge_attr=graph.get("edge_attr"),
+            edge_attr=inference_graph.get("edge_attr"),
             src=src,
             dst=dst,
         ).sigmoid()
-        prod_price_edge_index = torch.stack([src, dst], dim=0)
-        prod_prod_mask = torch.isin(
-            graph.edge_index[0], graph.product_indices
-        ) & torch.isin(graph.edge_index[1], graph.product_indices)
-        prod_prod_edge_index = graph.edge_index[:, prod_prod_mask]
 
+        # Parse to get new edge index / edge weights.
         keep_mask = probs > self.edge_prob_threshold
-
         prod_price_edge_attr = probs[keep_mask].view(-1, 1)
-        prod_price_edge_index = prod_price_edge_index[:, keep_mask]
+        prod_price_edge_index = torch.stack([src, dst], dim=0)[:, keep_mask]
+
+        src_is_product = torch.isin(
+            inference_graph.edge_index[0],
+            inference_graph.product_indices,
+        )
+        dst_is_product = torch.isin(
+            inference_graph.edge_index[1],
+            inference_graph.product_indices,
+        )
+        prod_prod_mask = src_is_product & dst_is_product
+        prod_prod_edge_index = inference_graph.edge_index[:, prod_prod_mask]
         prod_prod_edge_attr = torch.ones((prod_prod_edge_index.shape[1], 1))
+
+        new_edge_index = torch.cat([prod_price_edge_index, prod_prod_edge_index], dim=1)
+        new_edge_attr = torch.cat([prod_price_edge_attr, prod_prod_edge_attr], dim=0)
+
+        # Form a new graph (from the original, not the preprocessed copy) with the updated edge index / edge weights.
         new_graph = graph.clone()
-        new_graph.edge_index = torch.cat(
-            [prod_price_edge_index, prod_prod_edge_index], dim=1
-        )
-        new_graph.edge_attr = torch.cat(
-            [prod_price_edge_attr, prod_prod_edge_attr], dim=0
-        )
+        new_graph.edge_index = new_edge_index
+        new_graph.edge_attr = new_edge_attr
         return new_graph

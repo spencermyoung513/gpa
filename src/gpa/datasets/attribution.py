@@ -20,7 +20,7 @@ from tqdm import tqdm
 class DetectionGraph(Data):
     """A graph of product and price tag detections."""
 
-    NODE_DIM = 5  # (cx, cy, w, h, is_product)
+    NODE_DIM = 517  # (cx, cy, w, h, is_product)
     BBOX_START_IDX = 0
     BBOX_END_IDX = 3
     INDICATOR_IDX = -1  # Index of the is_product indicator in the node embeddings.
