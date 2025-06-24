@@ -32,7 +32,10 @@ class Encoder(nn.Module, ABC, Generic[T]):
         super().__init__()
         self.node_hidden_dim = node_hidden_dim
         self.layers = nn.ModuleList(
-            [self.layer_type(-1, node_hidden_dim) for _ in range(num_layers)]
+            [
+                self.layer_type(-1, node_hidden_dim, edge_dim=1)
+                for _ in range(num_layers)
+            ]
         )
         self._validate_layers()
 
@@ -57,7 +60,9 @@ class Encoder(nn.Module, ABC, Generic[T]):
         Returns:
             torch.Tensor: The encoded node embeddings, with shape (n, `self.node_hidden_dim`).
         """
-        if edge_attr is not None and edge_attr.size(0) != edge_index.size(1):
+        if edge_attr is None:
+            edge_attr = torch.ones(edge_index.shape[1], 1, dtype=x.dtype)
+        elif edge_attr.size(0) != edge_index.size(1):
             raise ValueError(
                 "edge_attr and edge_index must have the same number of edges"
             )

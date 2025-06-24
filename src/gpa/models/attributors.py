@@ -87,6 +87,7 @@ class LightningPriceAttributor(L.LightningModule):
         weight_decay: float = 1e-5,
         gamma: float = 0.0,
         balanced_edge_sampling: bool = True,
+        edge_deletion_only: bool = False,
     ):
         """Initialize a `LightningPriceAttributor`.
 
@@ -100,6 +101,7 @@ class LightningPriceAttributor(L.LightningModule):
             weight_decay (float, optional): The weight decay. Defaults to 1e-5.
             gamma (float, optional): Gamma parameter for focal loss. Defaults to 0.0 (ordinary BCE loss).
             balanced_edge_sampling (bool, optional): Whether to sample edges in a balanced manner (w.r.t. number of real/fake edges presented to the link predictor during training). Defaults to True.
+            edge_deletion_only (bool, optional): Whether to sample edges only from the existing graph when creating positive/negative examples to feed to the model. Defaults to False.
         """
         super().__init__()
         self.save_hyperparameters()
@@ -108,6 +110,7 @@ class LightningPriceAttributor(L.LightningModule):
         self.weight_decay = weight_decay
         self.gamma = gamma
         self.balanced_edge_sampling = balanced_edge_sampling
+        self.edge_deletion_only = edge_deletion_only
         self.model = PriceAttributor(
             encoder_type=encoder_type,
             encoder_settings=encoder_settings,
@@ -198,7 +201,9 @@ class LightningPriceAttributor(L.LightningModule):
                 "Unsupported step_type passed to PriceAttributor._step"
             )
         real_edges, fake_edges = get_candidate_edges(
-            batch, balanced=self.balanced_edge_sampling and step_type == "train"
+            batch=batch,
+            balanced=self.balanced_edge_sampling and step_type == "train",
+            deletion_only=self.edge_deletion_only,
         )
         loss = torch.tensor(0.0, device=self.device, requires_grad=step_type == "train")
         for edges, label in [(real_edges, 1.0), (fake_edges, 0.0)]:

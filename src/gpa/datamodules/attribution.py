@@ -6,6 +6,7 @@ from gpa.configs import InitialConnectionConfig
 from gpa.configs import TrainingConfig
 from gpa.datasets.attribution import PriceAttributionDataset
 from gpa.training.transforms import ConnectGraphWithSeedModel
+from gpa.training.transforms import FilterExtraneousPriceTags
 from gpa.training.transforms import HeuristicallyConnectGraph
 from gpa.training.transforms import MakeBoundingBoxTranslationInvariant
 from gpa.training.transforms import MaskOutVisualInformation
@@ -101,7 +102,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
             use_spatially_invariant_coords=use_spatially_invariant_coords,
             use_visual_info=use_visual_info,
         )
-        return Compose([edge_modifiers, *node_modifiers])
+        return Compose([FilterExtraneousPriceTags(), edge_modifiers, *node_modifiers])
 
     @staticmethod
     def _get_edge_modifiers(

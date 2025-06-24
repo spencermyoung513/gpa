@@ -42,6 +42,21 @@ def edge_index_diff(
     return diff_tensor
 
 
+def edge_index_intersection(
+    edge_index_a: torch.Tensor, edge_index_b: torch.Tensor
+) -> torch.Tensor:
+    set_a = set(map(tuple, edge_index_a.T.tolist()))
+    set_b = set(map(tuple, edge_index_b.T.tolist()))
+    common_pairs = set_a.intersection(set_b)
+
+    if common_pairs:
+        common_tensor = torch.tensor(list(common_pairs)).T
+    else:
+        common_tensor = torch.empty((2, 0), dtype=edge_index_a.dtype)
+
+    return common_tensor
+
+
 def get_node_embeddings_from_detections(
     product_bboxes: dict[str, torch.Tensor],
     product_embeddings: dict[str, torch.Tensor],
@@ -186,6 +201,9 @@ def connect_products_with_nearest_price_tag(
     Returns:
         torch.LongTensor: A (2, E) edge index connecting each product centroid with the nearest price tag.
     """
+    if price_indices.numel() == 0:
+        return torch.empty((2, 0), dtype=torch.long)
+
     product_centroids = centroids[product_indices]
     price_centroids = centroids[price_indices]
     distances = torch.cdist(product_centroids, price_centroids, p=2)
@@ -210,6 +228,9 @@ def connect_products_with_nearest_price_tag_below(
     Returns:
         torch.LongTensor: A (2, E) undirected edge index connecting each product centroid with the nearest price tag below it (if one exists).
     """
+    if price_indices.numel() == 0:
+        return torch.empty((2, 0), dtype=torch.long)
+
     product_centroids = centroids[product_indices]
     price_centroids = centroids[price_indices]
 
@@ -253,6 +274,9 @@ def connect_products_with_nearest_price_tag_per_group(
     Returns:
         torch.LongTensor: A (2, E) undirected edge index connecting each product centroid with a price tag according to the strategy outlined above.
     """
+    if price_indices.numel() == 0:
+        return torch.empty((2, 0), dtype=torch.long)
+
     price_centroids = centroids[price_indices]
     product_centroids = centroids[product_indices]
 
@@ -304,14 +328,21 @@ def connect_products_with_nearest_price_tag_per_group(
 
 
 def get_candidate_edges(
-    batch: Batch, balanced: bool = True
+    batch: Batch,
+    balanced: bool = True,
+    deletion_only: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Given a batch of graphs (represented as a mega-graph with a block diagonal adjacency matrix),
     return a set of candidate edges, of which some are fake and some are present in the ground truth.
 
+    This method can be constrained to only return edges that are found in the graph's current edge index.
+    This amounts to training a "corrective" model that deletes any edges in a proposal graph that it finds
+    unlikely.
+
     Args:
         batch (Batch): A batch of data from a PriceAttributionDataset.
         balanced (bool): Whether to balance the number of real and fake edges that are returned.
+        deletion_only (bool, optional): Whether we should restrict the edges that we compute loss on to the graph's current edge index. Defaults to False.
 
     Returns:
         tuple[torch.Tensor, torch.Tensor]: Tensors specifying real/fake edges in the mega-graph.
@@ -324,13 +355,15 @@ def get_candidate_edges(
         # Get the global indices that correspond to the current scene.
         current_scene_indices = torch.where(batch.batch == scene_idx)[0]
 
+        # Get a mask we can use to filter edges in this scene.
+        scene_mask = torch.zeros(
+            batch.x.size(0), dtype=torch.bool, device=batch.x.device
+        )
+        scene_mask[current_scene_indices] = True
+
         # From the saved data, retrieve the ground-truth prod-price edges in the current scene (to teach the model what to look for).
-        gt_src_in_scene = torch.isin(
-            batch.gt_prod_price_edge_index[0], current_scene_indices
-        )
-        gt_dst_in_scene = torch.isin(
-            batch.gt_prod_price_edge_index[1], current_scene_indices
-        )
+        gt_src_in_scene = scene_mask[batch.gt_prod_price_edge_index[0]]
+        gt_dst_in_scene = scene_mask[batch.gt_prod_price_edge_index[1]]
         real_edges_in_scene: torch.Tensor = batch.gt_prod_price_edge_index[
             :, gt_src_in_scene & gt_dst_in_scene
         ]
@@ -338,18 +371,29 @@ def get_candidate_edges(
         # Generate fake prod-price edges for the current scene (to teach the model what *not* to look for.)
         product_indices = torch.where(batch.x[current_scene_indices, -1] == 1)[0]
         price_indices = torch.where(batch.x[current_scene_indices, -1] == 0)[0]
-        candidate_edges = torch.cartesian_prod(product_indices, price_indices).T
+        pi, pj = torch.meshgrid(product_indices, price_indices, indexing="ij")
         candidate_edges = torch.stack(
             [
-                # We have to shift the indices to the global (mega-graph) frame of reference.
-                current_scene_indices[candidate_edges[0]],
-                current_scene_indices[candidate_edges[1]],
+                current_scene_indices[pi.flatten()],
+                current_scene_indices[pj.flatten()],
             ],
             dim=0,
         )
+
         # Make undirected (just in case the model is not symmetric).
-        candidate_edges = torch.cat([candidate_edges, candidate_edges.flip(0)], dim=1)
+        candidate_edges = edge_index_union(candidate_edges, candidate_edges.flip(0))
         fake_edges_in_scene = edge_index_diff(candidate_edges, real_edges_in_scene)
+
+        if deletion_only:
+            src_in_scene = scene_mask[batch.edge_index[0]]
+            dst_in_scene = scene_mask[batch.edge_index[1]]
+            current_edge_index = batch.edge_index[:, src_in_scene & dst_in_scene]
+            real_edges_in_scene = edge_index_intersection(
+                real_edges_in_scene, current_edge_index
+            )
+            fake_edges_in_scene = edge_index_intersection(
+                fake_edges_in_scene, current_edge_index
+            )
 
         if balanced:
             n_positive = real_edges_in_scene.shape[1]

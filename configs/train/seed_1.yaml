@@ -1,5 +1,6 @@
 accelerator: cpu
 balanced_edge_sampling: false
+edge_deletion_only: true
 batch_size: 8
 dataset_dir: data/price-graphs-ii
 gamma: 2.0
@@ -24,11 +25,13 @@ model:
     strategy: hadamard
   link_predictor_type: mlp
   initial_connection:
-    method: heuristic
-    heuristic: nearest_below
+    method: seed_model
+    seed_model:
+      trn_config_path: configs/train/best_so_far.yaml
+      chkp_path: chkp/best-so-far/best_loss.ckpt
   use_spatially_invariant_coords: true
   use_visual_info: false
 num_epochs: 20
 num_workers: 0
-run_name: 'best-so-far'
+run_name: seed_1
 weight_decay: 1.0e-05

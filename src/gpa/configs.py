@@ -70,6 +70,7 @@ class TrainingConfig(BaseModel):
     lr: float = 3e-4
     weight_decay: float = 1e-5
     balanced_edge_sampling: bool = True
+    edge_deletion_only: bool = False
     dataset_dir: Path
 
 

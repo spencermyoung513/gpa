@@ -7,13 +7,13 @@ import torch
 from gpa.common.constants import IS_PRICE
 from gpa.common.constants import IS_PRODUCT
 from gpa.common.helpers import get_node_embeddings_from_detections
-from gpa.common.helpers import parse_into_subgraphs
 from gpa.common.objects import GraphComponents
 from gpa.common.objects import ProductPriceGroup
 from gpa.common.objects import UPCGroup
 from matplotlib import colormaps
 from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
+from torch_geometric.utils import subgraph
 from tqdm import tqdm
 
 
@@ -35,7 +35,7 @@ class DetectionGraph(Data):
     global_embedding: torch.Tensor
     product_indices: torch.LongTensor
     price_indices: torch.LongTensor
-    upc_groups: torch.LongTensor
+    shared_upc_edge_index: torch.LongTensor
     gt_prod_price_edge_index: torch.LongTensor
 
     @classmethod
@@ -61,7 +61,6 @@ class DetectionGraph(Data):
             id_to_idx=id_to_idx,
             upc_groups=graph_components.upc_groups,
         )
-        upc_groups = parse_into_subgraphs(shared_upc_edge_index, num_nodes=x.shape[0])
         gt_prod_price_edge_index = cls._get_gt_prod_price_edge_index(
             id_to_idx=id_to_idx,
             prod_price_groups=graph_components.prod_price_groups,
@@ -83,8 +82,75 @@ class DetectionGraph(Data):
             global_embedding=graph_components.global_embedding,
             product_indices=product_indices,
             price_indices=price_indices,
+            shared_upc_edge_index=shared_upc_edge_index,
             gt_prod_price_edge_index=gt_prod_price_edge_index,
-            upc_groups=upc_groups,
+        )
+
+    @staticmethod
+    def subgraph(
+        original_graph: DetectionGraph, indices_to_keep: torch.LongTensor
+    ) -> DetectionGraph:
+        """Return a subgraph of a `DetectionGraph`, with all attributes / indices updated to reflect the new node set.
+
+        Args:
+            original_graph (DetectionGraph): The graph to take a subset of.
+            indices_to_keep (torch.LongTensor): The indices of the nodes in the original graph that should be kept.
+
+        Returns:
+            DetectionGraph: The requested subgraph.
+        """
+        indices_to_keep = indices_to_keep.sort().values
+        idx_map = torch.full(
+            (len(original_graph.x),),
+            -1,
+            dtype=torch.long,
+            device=indices_to_keep.device,
+        )
+        idx_map[indices_to_keep] = torch.arange(
+            len(indices_to_keep), device=indices_to_keep.device
+        )
+
+        x_sub = original_graph.x[indices_to_keep]
+
+        edge_index_sub, edge_attr_sub = subgraph(
+            subset=indices_to_keep,
+            edge_index=original_graph.edge_index,
+            edge_attr=original_graph.get("edge_attr"),
+            relabel_nodes=True,
+            num_nodes=len(original_graph.x),
+        )
+        upc_edge_sub, _ = subgraph(
+            subset=indices_to_keep,
+            edge_index=original_graph.shared_upc_edge_index,
+            relabel_nodes=True,
+            num_nodes=len(original_graph.x),
+        )
+        gt_edge_sub, _ = subgraph(
+            subset=indices_to_keep,
+            edge_index=original_graph.gt_prod_price_edge_index,
+            relabel_nodes=True,
+            num_nodes=len(original_graph.x),
+        )
+
+        valid_product_mask = idx_map[original_graph.product_indices] != -1
+        valid_price_mask = idx_map[original_graph.price_indices] != -1
+        product_indices_sub = idx_map[
+            original_graph.product_indices[valid_product_mask]
+        ]
+        price_indices_sub = idx_map[original_graph.price_indices[valid_price_mask]]
+        bbox_ids_sub = [original_graph.bbox_ids[i.item()] for i in indices_to_keep]
+
+        return DetectionGraph(
+            x=x_sub,
+            edge_index=edge_index_sub,
+            edge_attr=edge_attr_sub,
+            graph_id=original_graph.graph_id,
+            bbox_ids=bbox_ids_sub,
+            global_embedding=original_graph.global_embedding,
+            product_indices=product_indices_sub,
+            price_indices=price_indices_sub,
+            shared_upc_edge_index=upc_edge_sub,
+            gt_prod_price_edge_index=gt_edge_sub,
         )
 
     def plot(
@@ -215,14 +281,14 @@ class DetectionGraph(Data):
         return torch.cat(edge_indices, dim=1)
 
     def __cat_dim__(self, key, value, *args, **kwargs):
-        if key in ("product_indices", "price_indices", "upc_groups"):
+        if key in ("product_indices", "price_indices"):
             return 0
         elif key == "global_embedding":
             return None
         return super().__cat_dim__(key, value, *args, **kwargs)
 
     def __inc__(self, key, value, *args, **kwargs):
-        if key in ("product_indices", "price_indices", "upc_groups"):
+        if key in ("product_indices", "price_indices"):
             return self.num_nodes
         return super().__inc__(key, value, *args, **kwargs)
 

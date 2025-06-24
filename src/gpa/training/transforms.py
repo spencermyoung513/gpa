@@ -1,3 +1,4 @@
+from collections import defaultdict
 from pathlib import Path
 
 import torch
@@ -6,6 +7,7 @@ from gpa.common.helpers import connect_products_with_nearest_price_tag
 from gpa.common.helpers import connect_products_with_nearest_price_tag_below
 from gpa.common.helpers import connect_products_with_nearest_price_tag_per_group
 from gpa.common.helpers import edge_index_union
+from gpa.common.helpers import parse_into_subgraphs
 from gpa.datasets.attribution import DetectionGraph
 from gpa.models.attributors import LightningPriceAttributor
 from scipy import stats
@@ -81,7 +83,7 @@ class SampleRandomSubgraph(BaseTransform):
                 "`SampleRandomSubgraph` can only be applied to `DetectionGraph` objects."
             )
         p = stats.beta.rvs(self.a, self.b)
-        if graph.get("upc_groups") is not None:
+        if graph.get("shared_upc_edge_index") is not None:
             sub_index = self._group_dropout(graph, p)
         else:
             sub_index = self._edge_dropout(graph, p)
@@ -91,11 +93,14 @@ class SampleRandomSubgraph(BaseTransform):
         return new_graph
 
     def _group_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
-        assert graph.get("upc_groups") is not None
-        group_indices = graph.upc_groups.unique()
+        assert graph.get("shared_upc_edge_index") is not None
+        upc_groups = parse_into_subgraphs(
+            graph.shared_upc_edge_index, num_nodes=len(graph.x)
+        )
+        group_indices = upc_groups.unique()
         keep_group = torch.rand_like(group_indices, dtype=torch.float) > p
         keep_indices = torch.where(
-            torch.isin(graph.upc_groups, group_indices[keep_group])
+            torch.isin(upc_groups, group_indices[keep_group])
             | torch.isin(torch.arange(graph.x.shape[0]), graph.price_indices)
         )[0]
         src_mask = torch.isin(graph.gt_prod_price_edge_index[0], keep_indices)
@@ -104,7 +109,7 @@ class SampleRandomSubgraph(BaseTransform):
         return sub_index
 
     def _edge_dropout(self, graph: DetectionGraph, p: float) -> torch.Tensor:
-        assert graph.get("upc_groups") is None
+        assert graph.get("shared_upc_edge_index") is None
         sub_index, _ = dropout_edge(
             edge_index=graph.gt_prod_price_edge_index,
             p=p,
@@ -177,11 +182,14 @@ class HeuristicallyConnectGraph(BaseTransform):
                 price_indices=graph.price_indices,
             )
         elif self.strategy == ConnectionStrategy.NEAREST_BELOW_PER_GROUP:
+            upc_groups = parse_into_subgraphs(
+                graph.shared_upc_edge_index, num_nodes=len(graph.x)
+            )
             edge_index = connect_products_with_nearest_price_tag_per_group(
                 centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
                 product_indices=graph.product_indices,
                 price_indices=graph.price_indices,
-                cluster_assignment=graph.upc_groups,
+                cluster_assignment=upc_groups,
             )
         else:
             raise ValueError(f"Unknown connection strategy: {self.strategy}")
@@ -211,6 +219,7 @@ class ConnectGraphWithSeedModel(BaseTransform):
         self.model = LightningPriceAttributor.load_from_checkpoint(
             checkpoint_path=seed_model_chkp_path, map_location="cpu"
         ).model
+        self._cache = defaultdict(dict)
 
     @torch.inference_mode()
     def forward(self, graph: DetectionGraph) -> DetectionGraph:
@@ -229,45 +238,98 @@ class ConnectGraphWithSeedModel(BaseTransform):
                 "`ConnectGraphWithModel` can only be applied to `DetectionGraph` objects."
             )
 
-        # Preprocess a graph in the way the seed model expects.
-        inference_graph: DetectionGraph = self.transform(graph.clone())
+        if graph.graph_id in self._cache:
+            new_edge_index = self._cache[graph.graph_id]["edge_index"]
+            new_edge_attr = self._cache[graph.graph_id]["edge_attr"]
+        else:
+            inference_graph: DetectionGraph = self.transform(graph.clone())
+            x = inference_graph.x
+            edge_index = inference_graph.edge_index
+            src, dst = (
+                x.flatten()
+                for x in torch.meshgrid(
+                    inference_graph.product_indices,
+                    inference_graph.price_indices,
+                    indexing="ij",
+                )
+            )
+            probs = self.model(
+                x=x,
+                edge_index=edge_index,
+                edge_attr=inference_graph.get("edge_attr"),
+                src=src,
+                dst=dst,
+            ).sigmoid()
 
-        # Run inference on the preprocessed graph with the seed model.
-        x = inference_graph.x
-        edge_index = inference_graph.edge_index
-        src, dst = torch.cartesian_prod(
-            inference_graph.product_indices, inference_graph.price_indices
-        ).T
-        probs = self.model(
-            x=x,
-            edge_index=edge_index,
-            edge_attr=inference_graph.get("edge_attr"),
-            src=src,
-            dst=dst,
-        ).sigmoid()
+            keep_mask = probs > self.edge_prob_threshold
+            prod_price_edge_attr = probs[keep_mask].view(-1, 1)
+            prod_price_edge_index = torch.stack([src, dst], dim=0)[:, keep_mask]
 
-        # Parse to get new edge index / edge weights.
-        keep_mask = probs > self.edge_prob_threshold
-        prod_price_edge_attr = probs[keep_mask].view(-1, 1)
-        prod_price_edge_index = torch.stack([src, dst], dim=0)[:, keep_mask]
+            src_is_product = torch.isin(
+                inference_graph.edge_index[0],
+                inference_graph.product_indices,
+            )
+            dst_is_product = torch.isin(
+                inference_graph.edge_index[1],
+                inference_graph.product_indices,
+            )
+            prod_prod_mask = src_is_product & dst_is_product
+            prod_prod_edge_index = inference_graph.edge_index[:, prod_prod_mask]
+            prod_prod_edge_attr = torch.ones((prod_prod_edge_index.shape[1], 1))
 
-        src_is_product = torch.isin(
-            inference_graph.edge_index[0],
-            inference_graph.product_indices,
-        )
-        dst_is_product = torch.isin(
-            inference_graph.edge_index[1],
-            inference_graph.product_indices,
-        )
-        prod_prod_mask = src_is_product & dst_is_product
-        prod_prod_edge_index = inference_graph.edge_index[:, prod_prod_mask]
-        prod_prod_edge_attr = torch.ones((prod_prod_edge_index.shape[1], 1))
+            new_edge_index = torch.cat(
+                [prod_price_edge_index, prod_prod_edge_index], dim=1
+            )
+            new_edge_attr = torch.cat(
+                [prod_price_edge_attr, prod_prod_edge_attr], dim=0
+            )
 
-        new_edge_index = torch.cat([prod_price_edge_index, prod_prod_edge_index], dim=1)
-        new_edge_attr = torch.cat([prod_price_edge_attr, prod_prod_edge_attr], dim=0)
+            self._cache[graph.graph_id]["edge_index"] = new_edge_index
+            self._cache[graph.graph_id]["edge_attr"] = new_edge_attr
 
-        # Form a new graph (from the original, not the preprocessed copy) with the updated edge index / edge weights.
         new_graph = graph.clone()
         new_graph.edge_index = new_edge_index
         new_graph.edge_attr = new_edge_attr
         return new_graph
+
+
+class FilterExtraneousPriceTags(BaseTransform):
+    def __init__(self):
+        self._cache = {}
+
+    def forward(self, graph: DetectionGraph) -> DetectionGraph:
+        """Apply the `FilterExtraneousPriceTags` transform to the given graph.
+
+        Args:
+            graph (DetectionGraph): The graph to apply the transform to.
+
+        Returns:
+            DetectionGraph: A transformed version of the graph.
+        """
+        if not isinstance(graph, DetectionGraph):
+            raise ValueError(
+                "`FilterExtraneousPriceTags` can only be applied to `DetectionGraph` objects."
+            )
+        if graph.graph_id in self._cache:
+            node_indices = self._cache[graph.graph_id]
+        else:
+            product_cx = graph.x[graph.product_indices, graph.BBOX_START_IDX]
+            product_w = graph.x[graph.product_indices, graph.BBOX_START_IDX + 2]
+            products_x_left = (product_cx - product_w / 2).min()
+            products_x_right = (product_cx + product_w / 2).max()
+
+            prices_cx = graph.x[graph.price_indices, graph.BBOX_START_IDX]
+            prices_w = graph.x[graph.price_indices, graph.BBOX_START_IDX + 2]
+            prices_x_min = prices_cx - prices_w / 2
+            prices_x_max = prices_cx + prices_w / 2
+
+            in_bounds = (prices_x_max >= products_x_left) & (
+                prices_x_min <= products_x_right
+            )
+            filtered_price_indices = graph.price_indices[in_bounds]
+            node_indices = torch.cat([graph.product_indices, filtered_price_indices])
+            self._cache[graph.graph_id] = node_indices
+
+        return DetectionGraph.subgraph(
+            original_graph=graph, indices_to_keep=node_indices
+        )

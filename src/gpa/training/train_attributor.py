@@ -60,6 +60,7 @@ def train(config: TrainingConfig):
         weight_decay=config.weight_decay,
         gamma=config.gamma,
         balanced_edge_sampling=config.balanced_edge_sampling,
+        edge_deletion_only=config.edge_deletion_only,
     )
     datamodule = PriceAttributionDataModule(
         data_dir=config.dataset_dir,

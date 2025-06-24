@@ -10,6 +10,7 @@ from gpa.common.helpers import connect_products_with_nearest_price_tag
 from gpa.common.helpers import connect_products_with_nearest_price_tag_below
 from gpa.common.helpers import connect_products_with_nearest_price_tag_per_group
 from gpa.common.helpers import get_candidate_edges
+from gpa.common.helpers import parse_into_subgraphs
 from gpa.datamodules import PriceAttributionDataModule
 from gpa.datasets.attribution import DetectionGraph
 from torchmetrics.classification import BinaryF1Score
@@ -57,7 +58,9 @@ def evaluate(
             "price_indices": batch.price_indices,
         }
         if method == "nearest_per_group":
-            kwargs["cluster_assignment"] = batch.upc_groups
+            kwargs["cluster_assignment"] = parse_into_subgraphs(
+                batch.shared_upc_edge_index, num_nodes=len(batch.x)
+            )
         pred_edge_index = connector(**kwargs)
 
         real_edges_set = set(map(tuple, real_edges.T.tolist()))

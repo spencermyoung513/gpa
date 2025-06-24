@@ -22,7 +22,6 @@ When you commit new code, the pre-commit hook will run a series of scripts to st
 
 To view a dataset, simply use the [Data Viewer](notebooks/data_viewer.ipynb). This file is a Jupyter notebook that provides an interactive interface for visualizing individual price graphs.
 
-
 ## Training a Model
 
 To train a model, first fill out a config (using the [example config](src/gpa/training/sample_config.yaml) as a template). Then, run the [training script](src/gpa/training/train_attributor.py):

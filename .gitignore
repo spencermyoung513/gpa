@@ -8,3 +8,4 @@ logs/
 ignore/
 .ruff_cache/
 wandb/
+.vscode
