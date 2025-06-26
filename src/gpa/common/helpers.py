@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import torch
 from gpa.common.constants import IS_PRICE
 from gpa.common.constants import IS_PRODUCT
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from mpl_toolkits.mplot3d.axes3d import Axes3D
 from torch_geometric.data import Batch
 
 
@@ -150,6 +153,48 @@ def plot_bboxes(
             linestyle=linestyle,
         )
         ax.add_patch(rect)
+
+
+def plot_bboxes_3d(
+    bboxes: torch.Tensor,
+    ax: Axes3D,
+    linestyle: str = "solid",
+    color: str | tuple[float, float, float] | None = None,
+    width: float = 1.0,
+    height: float = 1.0,
+):
+    color = color or "k"
+    for bbox in bboxes:
+        x, y, z, w, h = bbox.tolist()
+        x0 = x - w / 2
+        x1 = x + w / 2
+        y0 = y - h / 2
+        y1 = y + h / 2
+        corners = [
+            [x0, y0, z],
+            [x1, y0, z],
+            [x1, y1, z],
+            [x0, y1, z],
+        ]
+        poly = Poly3DCollection(
+            [corners], alpha=0.3, facecolor=color, edgecolor=color, linestyle=linestyle
+        )
+        edges = [
+            [corners[0], corners[1]],
+            [corners[1], corners[2]],
+            [corners[2], corners[3]],
+            [corners[3], corners[0]],
+        ]
+        edge_lines = Line3DCollection(edges, colors=color, linestyles=linestyle)
+        ax.add_collection3d(edge_lines)
+        ax.add_collection3d(poly)
+
+    ax.set_box_aspect([1.0, 1.0, 1.0])
+    ax.view_init(elev=-45, azim=-30, roll=-70)
+
+    ax.set_xlim(0, width)
+    ax.set_ylim(0, height)
+    ax.set_zlim(1.0, 0.0)
 
 
 def parse_into_subgraphs(edge_index: torch.Tensor, num_nodes: int) -> torch.Tensor:

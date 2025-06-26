@@ -124,3 +124,11 @@ class GraphComponents(BaseModel):
                     f"Price embedding for bbox ID {bbox_id} has different dimension than global embedding."
                 )
         return self
+
+    @model_validator(mode="after")
+    def check_bboxes_are_in_3d_space(self):
+        bboxes = list(self.product_bboxes.values()) + list(self.price_bboxes.values())
+        for bbox in bboxes:
+            if bbox.numel() != 5:
+                raise ValueError("Bbox must contain 5 coordinates: x, y, z, w, h")
+        return self

@@ -52,7 +52,7 @@ def evaluate(
         real_edges, fake_edges = get_candidate_edges(batch, balanced=False)
         kwargs = {
             "centroids": batch.x[
-                :, DetectionGraph.BBOX_START_IDX : DetectionGraph.BBOX_END_IDX + 2
+                :, DetectionGraph.BBOX_START_IDX : DetectionGraph.BBOX_END_IDX + 3
             ],
             "product_indices": batch.product_indices,
             "price_indices": batch.price_indices,

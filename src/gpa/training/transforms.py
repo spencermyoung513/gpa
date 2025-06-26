@@ -18,6 +18,16 @@ from torch_geometric.utils import dropout_edge
 class MaskOutVisualInformation(BaseTransform):
     """A transform that masks out the visual information from a `DetectionGraph`."""
 
+    def __init__(
+        self,
+        bbox_start_idx: int = DetectionGraph.BBOX_START_IDX,
+        bbox_end_idx: int = DetectionGraph.BBOX_END_IDX,
+        indicator_idx: int = DetectionGraph.INDICATOR_IDX,
+    ):
+        self.bbox_start_idx = bbox_start_idx
+        self.bbox_end_idx = bbox_end_idx
+        self.indicator_idx = indicator_idx
+
     def forward(self, graph: DetectionGraph) -> DetectionGraph:
         """Apply the `MaskOutVisualInformation` transform to the given graph.
 
@@ -32,11 +42,40 @@ class MaskOutVisualInformation(BaseTransform):
                 "`MaskOutVisualInformation` can only be applied to `DetectionGraph` objects."
             )
         new_graph = graph.clone()
-        bbox_coords = new_graph.x[
-            :, new_graph.BBOX_START_IDX : new_graph.BBOX_END_IDX + 1
-        ]
-        indicator = new_graph.x[:, new_graph.INDICATOR_IDX]
+        bbox_coords = new_graph.x[:, self.bbox_start_idx : self.bbox_end_idx + 1]
+        indicator = new_graph.x[:, self.indicator_idx]
         new_x = torch.cat([bbox_coords, indicator.view(-1, 1)], dim=1)
+        new_graph.x = new_x
+        return new_graph
+
+
+class MaskOutDepthInformation(BaseTransform):
+    """A transform that masks out the depth information from a `DetectionGraph`."""
+
+    def __init__(self, bbox_depth_idx: int = DetectionGraph.BBOX_START_IDX + 2):
+        self.bbox_depth_idx = bbox_depth_idx
+
+    def forward(self, graph: DetectionGraph) -> DetectionGraph:
+        """Apply the `MaskOutDepthInformation` transform to the given graph.
+
+        Args:
+            graph (DetectionGraph): The graph to apply the transform to.
+
+        Returns:
+            DetectionGraph: A transformed version of the graph.
+        """
+        if not isinstance(graph, DetectionGraph):
+            raise ValueError(
+                "`MaskOutDepthInformation` can only be applied to `DetectionGraph` objects."
+            )
+        new_graph = graph.clone()
+        new_x = torch.cat(
+            [
+                new_graph.x[:, : self.bbox_depth_idx],
+                new_graph.x[:, self.bbox_depth_idx + 1 :],
+            ],
+            dim=1,
+        )
         new_graph.x = new_x
         return new_graph
 
@@ -121,6 +160,12 @@ class SampleRandomSubgraph(BaseTransform):
 class MakeBoundingBoxTranslationInvariant(BaseTransform):
     """A transform that converts the bounding box coordinates of a `DetectionGraph` into a translation-invariant spatial encoding."""
 
+    def __init__(
+        self, bbox_start_idx: int = DetectionGraph.BBOX_START_IDX, centroid_dim: int = 3
+    ):
+        self.bbox_start_idx = bbox_start_idx
+        self.centroid_dim = centroid_dim
+
     def forward(self, graph: DetectionGraph) -> DetectionGraph:
         """Apply the `MakeBoundingBoxTranslationInvariant` transform to the given graph.
 
@@ -134,7 +179,9 @@ class MakeBoundingBoxTranslationInvariant(BaseTransform):
             raise ValueError(
                 "`MakeBoundingBoxTranslationInvariant` can only be applied to `DetectionGraph` objects."
             )
-        centroids = graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2]
+        centroids = graph.x[
+            :, self.bbox_start_idx : self.bbox_start_idx + self.centroid_dim
+        ]
         center = centroids.mean(dim=0)
         invariant_centroids = centroids - center
         new_graph = graph.clone()
@@ -148,8 +195,9 @@ class MakeBoundingBoxTranslationInvariant(BaseTransform):
 class HeuristicallyConnectGraph(BaseTransform):
     """A transform that heuristically connects the nodes of a `DetectionGraph` (according to a preset scheme)."""
 
-    def __init__(self, strategy: ConnectionStrategy):
+    def __init__(self, strategy: ConnectionStrategy, centroid_dim: int = 2):
         self.strategy = strategy
+        self.centroid_dim = centroid_dim
 
     def forward(self, graph: DetectionGraph) -> DetectionGraph:
         """Apply the `HeuristicallyConnectGraph` transform to the given graph.
@@ -169,15 +217,19 @@ class HeuristicallyConnectGraph(BaseTransform):
             raise ValueError(
                 "`HeuristicallyConnectGraph` can only be applied to `DetectionGraph` objects."
             )
+        centroid_slice = slice(
+            graph.BBOX_START_IDX, graph.BBOX_START_IDX + self.centroid_dim
+        )
+        centroids = graph.x[:, centroid_slice]
         if self.strategy == ConnectionStrategy.NEAREST:
             edge_index = connect_products_with_nearest_price_tag(
-                centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
+                centroids=centroids,
                 product_indices=graph.product_indices,
                 price_indices=graph.price_indices,
             )
         elif self.strategy == ConnectionStrategy.NEAREST_BELOW:
             edge_index = connect_products_with_nearest_price_tag_below(
-                centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
+                centroids=centroids,
                 product_indices=graph.product_indices,
                 price_indices=graph.price_indices,
             )
@@ -186,7 +238,7 @@ class HeuristicallyConnectGraph(BaseTransform):
                 graph.shared_upc_edge_index, num_nodes=len(graph.x)
             )
             edge_index = connect_products_with_nearest_price_tag_per_group(
-                centroids=graph.x[:, graph.BBOX_START_IDX : graph.BBOX_START_IDX + 2],
+                centroids=centroids,
                 product_indices=graph.product_indices,
                 price_indices=graph.price_indices,
                 cluster_assignment=upc_groups,
@@ -294,7 +346,13 @@ class ConnectGraphWithSeedModel(BaseTransform):
 
 
 class FilterExtraneousPriceTags(BaseTransform):
-    def __init__(self):
+    def __init__(
+        self,
+        bbox_x_idx: int = DetectionGraph.BBOX_START_IDX,
+        bbox_w_idx: int = DetectionGraph.BBOX_END_IDX - 1,
+    ):
+        self.bbox_x_idx = bbox_x_idx
+        self.bbox_w_idx = bbox_w_idx
         self._cache = {}
 
     def forward(self, graph: DetectionGraph) -> DetectionGraph:
@@ -313,13 +371,13 @@ class FilterExtraneousPriceTags(BaseTransform):
         if graph.graph_id in self._cache:
             node_indices = self._cache[graph.graph_id]
         else:
-            product_cx = graph.x[graph.product_indices, graph.BBOX_START_IDX]
-            product_w = graph.x[graph.product_indices, graph.BBOX_START_IDX + 2]
+            product_cx = graph.x[graph.product_indices, self.bbox_x_idx]
+            product_w = graph.x[graph.product_indices, self.bbox_w_idx]
             products_x_left = (product_cx - product_w / 2).min()
             products_x_right = (product_cx + product_w / 2).max()
 
-            prices_cx = graph.x[graph.price_indices, graph.BBOX_START_IDX]
-            prices_w = graph.x[graph.price_indices, graph.BBOX_START_IDX + 2]
+            prices_cx = graph.x[graph.price_indices, self.bbox_x_idx]
+            prices_w = graph.x[graph.price_indices, self.bbox_w_idx]
             prices_x_min = prices_cx - prices_w / 2
             prices_x_max = prices_cx + prices_w / 2
 

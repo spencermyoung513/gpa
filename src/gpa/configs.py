@@ -54,6 +54,7 @@ class ModelConfig(BaseModel):
 
     # Preprocessing
     use_visual_info: bool = False
+    use_depth: bool = True
     use_spatially_invariant_coords: bool = False
     initial_connection: InitialConnectionConfig = InitialConnectionConfig()
 

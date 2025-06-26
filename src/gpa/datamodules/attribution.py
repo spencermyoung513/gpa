@@ -9,6 +9,7 @@ from gpa.training.transforms import ConnectGraphWithSeedModel
 from gpa.training.transforms import FilterExtraneousPriceTags
 from gpa.training.transforms import HeuristicallyConnectGraph
 from gpa.training.transforms import MakeBoundingBoxTranslationInvariant
+from gpa.training.transforms import MaskOutDepthInformation
 from gpa.training.transforms import MaskOutVisualInformation
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import BaseTransform
@@ -22,6 +23,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
         batch_size: int = 1,
         num_workers: int = 0,
         use_visual_info: bool = False,
+        use_depth: bool = True,
         use_spatially_invariant_coords: bool = False,
         initial_connection_config: InitialConnectionConfig = InitialConnectionConfig(),
     ):
@@ -32,6 +34,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
             batch_size (int, optional): The batch size to use for dataloaders. Defaults to 1.
             num_workers (int, optional): The number of workers to use for dataloaders. Defaults to 0.
             use_visual_info (bool, optional): Whether/not to use visual information as part of initial node representations. Defaults to False.
+            use_depth (bool, optional): Whether/not to use inferred depth of each bbox as part of initial node representations. Defaults to True.
             use_spatially_invariant_coords (bool, optional): Whether/not to use spatially invariant coordinates as part of initial node representations. Defaults to False.
             initial_connection_config (InitialConnectionConfig, optional): Configuration for how the graph should be initially connected (in addition to its sparse, same-UPC-only connections) before being passed to the model.
         """
@@ -40,6 +43,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.use_visual_info = use_visual_info
+        self.use_depth = use_depth
         self.use_spatially_invariant_coords = use_spatially_invariant_coords
         self.initial_connection_config = initial_connection_config
 
@@ -48,6 +52,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
             initial_connection_config=self.initial_connection_config,
             use_spatially_invariant_coords=self.use_spatially_invariant_coords,
             use_visual_info=self.use_visual_info,
+            use_depth=self.use_depth,
         )
         self.train = PriceAttributionDataset(
             root=self.data_dir / "train",
@@ -94,24 +99,29 @@ class PriceAttributionDataModule(L.LightningDataModule):
         initial_connection_config: InitialConnectionConfig,
         use_spatially_invariant_coords: bool = False,
         use_visual_info: bool = False,
+        use_depth: bool = True,
     ) -> BaseTransform:
         edge_modifiers = PriceAttributionDataModule._get_edge_modifiers(
-            initial_connection_config=initial_connection_config
+            initial_connection_config=initial_connection_config,
+            use_depth=use_depth,
         )
         node_modifiers = PriceAttributionDataModule._get_node_modifiers(
             use_spatially_invariant_coords=use_spatially_invariant_coords,
             use_visual_info=use_visual_info,
+            use_depth=use_depth,
         )
         return Compose([FilterExtraneousPriceTags(), *edge_modifiers, *node_modifiers])
 
     @staticmethod
     def _get_edge_modifiers(
         initial_connection_config: InitialConnectionConfig,
+        use_depth: bool = True,
     ) -> list[BaseTransform]:
+        centroid_dim = 3 if use_depth else 2
         if initial_connection_config.method == "heuristic":
             heuristic = initial_connection_config.heuristic
             assert heuristic is not None
-            return [HeuristicallyConnectGraph(heuristic)]
+            return [HeuristicallyConnectGraph(heuristic, centroid_dim=centroid_dim)]
 
         if initial_connection_config.method == "seed_model":
             seed_model_spec = initial_connection_config.seed_model
@@ -121,6 +131,7 @@ class PriceAttributionDataModule(L.LightningDataModule):
             seed_node_modifiers = PriceAttributionDataModule._get_node_modifiers(
                 use_spatially_invariant_coords=seed_model_cfg.model.use_spatially_invariant_coords,
                 use_visual_info=seed_model_cfg.model.use_visual_info,
+                use_depth=seed_model_cfg.model.use_depth,
             )
             seed_transforms = [*seed_node_modifiers]
             assert seed_model_cfg.model.initial_connection.method != "seed_model", (
@@ -146,10 +157,13 @@ class PriceAttributionDataModule(L.LightningDataModule):
     def _get_node_modifiers(
         use_spatially_invariant_coords: bool = False,
         use_visual_info: bool = False,
+        use_depth: bool = False,
     ) -> list[BaseTransform]:
         transforms = []
         if use_spatially_invariant_coords:
             transforms.append(MakeBoundingBoxTranslationInvariant())
         if not use_visual_info:
             transforms.append(MaskOutVisualInformation())
+        if not use_depth:
+            transforms.append(MaskOutDepthInformation())
         return transforms

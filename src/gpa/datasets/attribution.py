@@ -20,9 +20,9 @@ from tqdm import tqdm
 class DetectionGraph(Data):
     """A graph of product and price tag detections."""
 
-    NODE_DIM = 517  # (cx, cy, w, h, is_product)
+    NODE_DIM = 518  # (cx, cy, cz, w, h, visual_embedding, is_product)
     BBOX_START_IDX = 0
-    BBOX_END_IDX = 3
+    BBOX_END_IDX = 4
     INDICATOR_IDX = -1  # Index of the is_product indicator in the node embeddings.
 
     # Base attributes (part of the base `Data` class)
@@ -42,7 +42,9 @@ class DetectionGraph(Data):
     def build(cls, graph_components: GraphComponents) -> DetectionGraph:
         """Assemble the provided components into a `DetectionGraph`.
 
-        The node embeddings are made up of the (x, y, w, h) bbox coordinates and an indicator of if a node is a product or a price tag.
+        The node embeddings are made up of the (x, y, z, w, h) bbox coordinates, a visual representation of the bbox crop,
+        and an indicator of if a node is a product or a price tag.
+
         We initially connect all product nodes that share the same UPC. All other nodes are isolated.
 
         Args:
