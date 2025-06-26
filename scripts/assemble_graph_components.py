@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Callable
 
+import numpy as np
 import open_clip
 import pandas as pd
 import torch
@@ -32,6 +33,43 @@ def with_xywh(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def xywh_to_xyzwh(xywh: torch.Tensor, depth_map: torch.Tensor) -> torch.Tensor:
+    img_height, img_width = depth_map.shape
+    num_bboxes = xywh.shape[0]
+
+    x = xywh[:, 0] * img_width
+    y = xywh[:, 1] * img_height
+    w = xywh[:, 2] * img_width / 2
+    h = xywh[:, 3] * img_height / 2
+
+    x1 = (x - w).clamp(0, img_width - 1)
+    y1 = (y - h).clamp(0, img_height - 1)
+    x2 = (x + w).clamp(0, img_width - 1)
+    y2 = (y + h).clamp(0, img_height - 1)
+
+    yy, xx = torch.meshgrid(
+        torch.arange(img_height), torch.arange(img_width), indexing="ij"
+    )
+    xx = xx.unsqueeze(0).expand(num_bboxes, -1, -1)
+    yy = yy.unsqueeze(0).expand(num_bboxes, -1, -1)
+
+    x1 = x1[:, None, None]
+    x2 = x2[:, None, None]
+    y1 = y1[:, None, None]
+    y2 = y2[:, None, None]
+
+    mask = (xx >= x1) & (xx <= x2) & (yy >= y1) & (yy <= y2)
+    depth = depth_map.unsqueeze(0).expand(num_bboxes, -1, -1)
+
+    masked_depth = depth * mask
+    sum_depth = masked_depth.sum(dim=(1, 2))
+    count = mask.sum(dim=(1, 2)).clamp(min=1)
+    z = sum_depth / count
+
+    xyzwh = torch.cat([xywh[:, :2], z.view(-1, 1), xywh[:, 2:]], dim=1)
+    return xyzwh
+
+
 def crop_from_xywhn(
     image: Image.Image,
     xywhn: list[float, float, float, float],
@@ -56,6 +94,7 @@ def crop_from_xywhn(
 def get_bbox_and_embeddings_tensors(
     rows: pd.DataFrame,
     image: Image.Image,
+    depth: torch.Tensor,
     embedder: CLIP,
     preprocess: Callable[[Image.Image], torch.Tensor],
     device: torch.device = torch.device("cpu"),
@@ -70,13 +109,14 @@ def get_bbox_and_embeddings_tensors(
         ],
         dim=1,
     ).to(torch.float32)
+    xyzwh = xywh_to_xyzwh(xywh, depth)
 
     embeddings = []
     for i in tqdm(
         range(0, len(xywh), batch_size), desc="Generating embeddings...", leave=False
     ):
-        batch_bboxes = xywh[i : i + batch_size]
-        batch_crops = [crop_from_xywhn(image, bbox) for bbox in batch_bboxes]
+        batch_xywh = xywh[i : i + batch_size]
+        batch_crops = [crop_from_xywhn(image, bbox) for bbox in batch_xywh]
         batch_tensors = torch.stack(
             [preprocess(crop) for crop in batch_crops], dim=0
         ).to(device)
@@ -84,7 +124,7 @@ def get_bbox_and_embeddings_tensors(
         batch_embeddings = F.normalize(batch_embeddings, dim=1)
         embeddings.append(batch_embeddings.cpu())
     embeddings = torch.cat(embeddings, dim=0)
-    return xywh, embeddings
+    return xyzwh, embeddings
 
 
 @torch.inference_mode()
@@ -128,7 +168,10 @@ def form_graph_components(
     group_ids_in_scene: list[str] = scene_groups["group_id"].unique().tolist()
 
     img_path = scene_products["local_path"].iloc[0]
+    depth_path = Path(str(img_path).replace("images", "depths"))
     image = Image.open(dataset_dir / img_path)
+    depth = torch.tensor(np.array(Image.open(dataset_dir / depth_path).convert("L")))
+    depth = depth / 255.0
 
     global_embedding = (
         embedder.encode_image(preprocess(image).to(device).unsqueeze(0)).cpu().flatten()
@@ -137,6 +180,7 @@ def form_graph_components(
     prod_bboxes, prod_embeddings = get_bbox_and_embeddings_tensors(
         rows=scene_products,
         image=image,
+        depth=depth,
         embedder=embedder,
         preprocess=preprocess,
         device=device,
@@ -145,6 +189,7 @@ def form_graph_components(
     price_bboxes, price_embeddings = get_bbox_and_embeddings_tensors(
         rows=scene_price_tags,
         image=image,
+        depth=depth,
         embedder=embedder,
         preprocess=preprocess,
         device=device,
