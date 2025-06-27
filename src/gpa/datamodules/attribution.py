@@ -102,16 +102,16 @@ class PriceAttributionDataModule(L.LightningDataModule):
             use_spatially_invariant_coords=use_spatially_invariant_coords,
             use_visual_info=use_visual_info,
         )
-        return Compose([FilterExtraneousPriceTags(), edge_modifiers, *node_modifiers])
+        return Compose([FilterExtraneousPriceTags(), *edge_modifiers, *node_modifiers])
 
     @staticmethod
     def _get_edge_modifiers(
         initial_connection_config: InitialConnectionConfig,
-    ) -> BaseTransform:
+    ) -> list[BaseTransform]:
         if initial_connection_config.method == "heuristic":
             heuristic = initial_connection_config.heuristic
             assert heuristic is not None
-            return HeuristicallyConnectGraph(heuristic)
+            return [HeuristicallyConnectGraph(heuristic)]
 
         if initial_connection_config.method == "seed_model":
             seed_model_spec = initial_connection_config.seed_model
@@ -130,13 +130,17 @@ class PriceAttributionDataModule(L.LightningDataModule):
                 heuristic = seed_model_cfg.model.initial_connection.heuristic
                 assert heuristic is not None
                 seed_transforms.append(HeuristicallyConnectGraph(heuristic))
-            return ConnectGraphWithSeedModel(
-                seed_model_chkp_path=seed_model_spec.chkp_path,
-                seed_model_transform=Compose(seed_transforms),
-            )
+            return [
+                ConnectGraphWithSeedModel(
+                    seed_model_chkp_path=seed_model_spec.chkp_path,
+                    seed_model_transform=Compose(seed_transforms),
+                )
+            ]
 
         elif initial_connection_config.method is not None:
             raise NotImplementedError("Initial connection method not suported")
+        else:
+            return []
 
     @staticmethod
     def _get_node_modifiers(
