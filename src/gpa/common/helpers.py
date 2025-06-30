@@ -68,7 +68,7 @@ def get_node_embeddings_from_detections(
 ) -> tuple[torch.Tensor, dict[str, int]]:
     """Build a node embeddings matrix from the provided detections.
 
-    Currently, each node embedding is (cx, cy, w, h, visual_repr, is_product), where
+    Currently, each node embedding is (cx, cy, cz, w, h, visual_repr, is_product), where
     visual_repr is (512,) and is_product is an indicator (0 or 1). This representation
     can be further transformed for downstream use (e.g. filter to spatial information only).
 
