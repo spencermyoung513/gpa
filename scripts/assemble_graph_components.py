@@ -9,8 +9,8 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from gpa.common.objects import GraphComponents
+from gpa.common.objects import NodeGroup
 from gpa.common.objects import ProductPriceGroup
-from gpa.common.objects import UPCGroup
 from open_clip import CLIP
 from PIL import Image
 from tqdm import tqdm
@@ -152,11 +152,13 @@ def form_graph_components(
     price_bbox_ids = scene_price_tags["price_bbox_id"].tolist()
 
     upc_groups = [
-        UPCGroup(upc=upc, bbox_ids=bbox_ids)
+        NodeGroup(id=upc, bbox_ids=bbox_ids)
         for upc, bbox_ids in scene_products.groupby("ml_label_name")["prod_bbox_id"]
         .apply(list)
         .items()
     ]
+    # TODO: use swire categories and brand from .csv to create `brand_groups` and `category_groups` in a similar manner.
+    #       OR maybe just load in the graph and do it from there?
 
     # These groups provide the "ground truth" product-price edges.
     prod_price_groups = []

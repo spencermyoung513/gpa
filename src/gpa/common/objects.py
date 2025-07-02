@@ -1,11 +1,16 @@
 import torch
 from pydantic import BaseModel
+from pydantic import Field
 from pydantic import model_validator
 
 
-class UPCGroup(BaseModel):
-    upc: str
-    bbox_ids: list[str]
+class NodeGroup(BaseModel):
+    id: str = Field(
+        description="Unique identifier of the node group (i.e. the UPC, Brand ID, or Category ID)",
+    )
+    bbox_ids: list[str] = Field(
+        description="List of bounding box ids associated with the node group",
+    )
 
 
 class ProductPriceGroup(BaseModel):
@@ -79,7 +84,9 @@ class GraphComponents(BaseModel):
     product_embeddings: dict[str, torch.Tensor]
     price_bboxes: dict[str, torch.Tensor]
     price_embeddings: dict[str, torch.Tensor]
-    upc_groups: list[UPCGroup]
+    upc_groups: list[NodeGroup]
+    category_groups: list[NodeGroup] = Field(default_factory=list)
+    brand_groups: list[NodeGroup] = Field(default_factory=list)
     prod_price_groups: list[ProductPriceGroup]
     model_config = {"arbitrary_types_allowed": True}
 

@@ -9,8 +9,8 @@ from gpa.common.constants import IS_PRODUCT
 from gpa.common.helpers import get_node_embeddings_from_detections
 from gpa.common.helpers import parse_into_subgraphs
 from gpa.common.objects import GraphComponents
+from gpa.common.objects import NodeGroup
 from gpa.common.objects import ProductPriceGroup
-from gpa.common.objects import UPCGroup
 from matplotlib import colormaps
 from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
@@ -36,6 +36,8 @@ class DetectionGraph(Data):
     product_indices: torch.LongTensor
     price_indices: torch.LongTensor
     upc_groups: torch.LongTensor
+    category_groups: torch.LongTensor
+    brand_groups: torch.LongTensor
     gt_prod_price_edge_index: torch.LongTensor
 
     @classmethod
@@ -57,11 +59,25 @@ class DetectionGraph(Data):
             price_bboxes=graph_components.price_bboxes,
             price_embeddings=graph_components.price_embeddings,
         )
-        shared_upc_edge_index = cls._get_shared_upc_edge_index(
+        shared_upc_edge_index = cls._get_shared_group_edge_index(
             id_to_idx=id_to_idx,
             upc_groups=graph_components.upc_groups,
         )
         upc_groups = parse_into_subgraphs(shared_upc_edge_index, num_nodes=x.shape[0])
+        shared_category_edge_index = cls._get_shared_group_edge_index(
+            id_to_idx=id_to_idx,
+            upc_groups=graph_components.category_groups,
+        )
+        category_groups = parse_into_subgraphs(
+            shared_category_edge_index, num_nodes=x.shape[0]
+        )
+        shared_brand_edge_index = cls._get_shared_group_edge_index(
+            id_to_idx=id_to_idx,
+            upc_groups=graph_components.brand_groups,
+        )
+        brand_groups = parse_into_subgraphs(
+            shared_brand_edge_index, num_nodes=x.shape[0]
+        )
         gt_prod_price_edge_index = cls._get_gt_prod_price_edge_index(
             id_to_idx=id_to_idx,
             prod_price_groups=graph_components.prod_price_groups,
@@ -85,6 +101,8 @@ class DetectionGraph(Data):
             price_indices=price_indices,
             gt_prod_price_edge_index=gt_prod_price_edge_index,
             upc_groups=upc_groups,
+            brand_groups=brand_groups,
+            category_groups=category_groups,
         )
 
     def plot(
@@ -157,16 +175,16 @@ class DetectionGraph(Data):
         return ax
 
     @classmethod
-    def _get_shared_upc_edge_index(
+    def _get_shared_group_edge_index(
         cls,
         id_to_idx: dict[str, int],
-        upc_groups: list[UPCGroup],
+        upc_groups: list[NodeGroup],
     ) -> torch.LongTensor:
         """Form an undirected edge index that indicates which nodes in the graph share the same UPC.
 
         Args:
             id_to_idx (dict[str, int]): A mapping from bbox IDs to their respective indices in the graph's node embeddings matrix.
-            upc_groups (list[UPCGroup]): A list of UPC groups, where each group contains the bbox IDs of nodes that share the same UPC.
+            upc_groups (list[NodeGroup]): A list of UPC groups, where each group contains the bbox IDs of nodes that share the same UPC.
 
         Returns:
             torch.LongTensor: A (2, num_edges) tensor of edge indices.
